@@ -1,0 +1,76 @@
+{
+  "theme": "dark",
+  "archetype": "Developer Tool / High-Contrast & Premium Glassmorphism",
+  "colors": {
+    "background": "bg-[#080C16]",
+    "surface": "bg-[#0D1322]/60",
+    "surface_hover": "bg-[#11192B]/80",
+    "border": "border-white/[0.08]",
+    "border_focus": "border-blue-500/50",
+    "primary_text": "text-white",
+    "secondary_text": "text-slate-400",
+    "accent": "bg-blue-600 hover:bg-blue-500 text-white",
+    "accent_ring": "ring-blue-500/30",
+    "code_background": "bg-[#03060C]",
+    "success": "text-emerald-400"
+  },
+  "typography": {
+    "font_family_headings": "font-sans tracking-tight",
+    "font_family_body": "font-sans leading-relaxed",
+    "font_family_code": "font-mono text-[13px] leading-6",
+    "h1": "text-2xl lg:text-3xl text-white font-semibold tracking-tight",
+    "h2": "text-lg text-white font-medium",
+    "h3": "text-base text-slate-200 font-medium",
+    "label": "text-xs font-medium text-slate-400 uppercase tracking-widest",
+    "body": "text-sm text-slate-300"
+  },
+  "layout": {
+    "app_container": "flex h-screen w-full bg-[#080C16] text-slate-300 overflow-hidden font-sans selection:bg-blue-500/30",
+    "sidebar": "w-64 flex-shrink-0 border-r border-white/[0.08] bg-[#0A0F1C]/40 backdrop-blur-2xl flex flex-col z-20",
+    "main_content": "flex-1 flex flex-col h-full overflow-hidden relative z-10",
+    "header": "h-20 border-b border-white/[0.08] bg-[#080C16]/60 backdrop-blur-xl flex items-center px-8 justify-between shrink-0",
+    "content_area": "flex-1 overflow-y-auto p-8 scrollbar-hide",
+    "grid": "grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-7xl mx-auto w-full",
+    "left_panel": "col-span-1 lg:col-span-5 flex flex-col gap-6",
+    "right_panel": "col-span-1 lg:col-span-7 flex flex-col gap-6 h-full min-h-[600px]"
+  },
+  "surfaces": {
+    "glass_card": "bg-[#0D1322]/40 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 shadow-2xl shadow-black/50",
+    "upload_zone": "border-2 border-dashed border-white/[0.15] bg-[#0D1322]/20 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-white/[0.02] hover:border-blue-500/40 transition-all duration-300 cursor-pointer group",
+    "code_panel": "bg-[#03060C] rounded-xl border border-white/[0.08] overflow-hidden flex flex-col h-full shadow-inner"
+  },
+  "components": {
+    "button_primary": "w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-6 py-3 font-medium transition-all duration-300 shadow-[0_0_20px_rgba(37,99,235,0.15)] hover:shadow-[0_0_30px_rgba(37,99,235,0.3)] flex items-center justify-center gap-2",
+    "button_secondary": "bg-white/[0.03] hover:bg-white/[0.08] text-slate-200 border border-white/[0.08] hover:border-white/[0.15] rounded-lg px-4 py-2 text-sm font-medium transition-all flex items-center gap-2 shadow-sm",
+    "input": "w-full bg-[#03060C] border border-white/[0.1] rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/50 transition-all placeholder:text-slate-600 shadow-inner",
+    "select": "w-full bg-[#03060C] border border-white/[0.1] rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/50 appearance-none cursor-pointer shadow-inner",
+    "sidebar_item": "flex items-center gap-3 px-4 py-3 rounded-xl mx-4 text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-white/[0.05] group",
+    "sidebar_item_active": "flex items-center gap-3 px-4 py-3 rounded-xl mx-4 text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-[inset_0_0_12px_rgba(59,130,246,0.1)]"
+  },
+  "animations": {
+    "hover_lift": "transition-transform duration-300 hover:-translate-y-1",
+    "fade_in": "animate-in fade-in duration-500 ease-out",
+    "slide_up": "animate-in slide-in-from-bottom-4 duration-500 ease-out",
+    "spinner": "animate-spin text-blue-400"
+  },
+  "icons": {
+    "library": "lucide-react",
+    "usage": "Use icons: Database, FileJson, LayoutTemplate, Download, UploadCloud, Copy, Check, TerminalSquare, Loader2, ArrowRight, FolderArchive"
+  },
+  "instructions_to_main_agent": [
+    "Build a modern single-page React app focusing on high-end developer tool aesthetics.",
+    "Ensure all backgrounds use the Dark Navy color scheme. Do NOT use standard flat #000 or #111 blacks. Use the specified hex codes (e.g., #080C16).",
+    "Avoid Inter font for headings; stick to system sans-serif or explicitly import Outfit/Geist if possible. Use standard monospaced fonts for the code output.",
+    "Implement the layout with a 64-width fixed sidebar on the left and a top header containing title and subtitle.",
+    "Main body uses a 12-column grid. Left 5 cols: Upload Card and Configuration Card. Right 7 cols: SQL Output Panel.",
+    "All interactive elements (inputs, dropdowns, buttons, upload zone) MUST include `data-testid` attributes (e.g., `data-testid=\"upload-zone\"`, `data-testid=\"generate-btn\"`).",
+    "Upload Card: Should show a dashed border, an upload icon, and text instructing to drag-drop ZIP. Implement a subtle hover state.",
+    "Configuration Card: Needs inputs for 'Workspace', 'Application ID', and a select dropdown for 'APEX Version' with options (22.2, 23.1, 23.2, 24.1, 24.2, 26.1). Include an 'Optional Toggle: Run npm build'.",
+    "Generate Button: Implement a click state that shows a loading spinner (lucide-react Loader2) and changes text to 'Generating...'.",
+    "SQL Output Panel: A dark code-block area with a header containing a 'Copy SQL' button. The output should simulate syntax highlighting using simple spans or Tailwind text colors (e.g., text-purple-400 for keywords like CREATE OR REPLACE, text-green-400 for strings).",
+    "Copy Button: On click, change icon to a Check and text to 'Copied!' for 2 seconds.",
+    "Implement glassmorphism heavily across the cards using backdrop-blur-xl and low opacity white borders/backgrounds.",
+    "Ensure typography hierarchy is crisp. Labels should be small, uppercase, and widely tracked.",
+    "Use standard Tailwind CSS classes to achieve all visual styling."
+  ]
+}
