@@ -80,22 +80,23 @@ def test_generate_success_242(zip_bytes):
     assert body["app_id"] == 205247
 
     sql = body["sql"]
-    # PL/SQL core constructs
+    # PL/SQL core constructs (wwv_flow_imp_* API used by APEX 22.2+)
     for token in [
-        "apex_util.set_security_group_id",
-        "apex_application.g_flow_id",
-        "apex_application.create_page",
-        "apex_application.create_page_plug",
-        "apex_application.create_page_button",
-        "apex_application.create_page_process",
+        "wwv_flow_imp.import_begin",
+        "wwv_flow_imp.import_end",
+        "wwv_flow_imp_page.create_page",
+        "wwv_flow_imp_page.create_page_plug",
+        "wwv_flow_imp_page.create_page_button",
+        "wwv_flow_imp_page.create_page_process",
         "wwv_flow_imp_shared.create_app_static_file",
+        "apex_util.find_security_group_id",
         "WKSP_NSTS",
         "205247",
     ]:
         assert token in sql, f"missing token: {token}"
 
     # form detection -> page_item + floatingLabel for 24.2
-    assert "apex_application.create_page_item" in sql
+    assert "wwv_flow_imp_page.create_page_item" in sql
     assert "floatingLabel" in sql
 
     # report detection -> NATIVE_IR

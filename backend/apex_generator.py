@@ -1,4 +1,9 @@
-"""APEX SQL generator - emits apex_application PL/SQL helper calls."""
+"""APEX SQL generator - emits wwv_flow_imp_page.* PL/SQL via import_begin/import_end.
+
+The internal `apex_application.create_*` procedures are NOT publicly callable in
+APEX 22.2+ (PLS-00302). The real APEX export format uses the wwv_flow_imp_*
+package family wrapped in an import context. That's what we emit here.
+"""
 import time
 import re
 from typing import Dict, List, Any
@@ -9,7 +14,6 @@ def _sanitize(value: str) -> str:
 
 
 def _label(name: str) -> str:
-    """Convert camelCase / snake_case to Title Case."""
     s = re.sub(r"([a-z])([A-Z])", r"\1 \2", name or "")
     s = s.replace("_", " ").replace("-", " ")
     return " ".join(w.capitalize() for w in s.split())
@@ -17,7 +21,7 @@ def _label(name: str) -> str:
 
 def _item_type(field: str) -> str:
     f = field.lower()
-    if any(k in f for k in ("email",)):
+    if "email" in f:
         return "NATIVE_EMAIL"
     if any(k in f for k in ("password", "secret")):
         return "NATIVE_PASSWORD"
@@ -39,18 +43,47 @@ class IdAllocator:
         return self._cur
 
 
+# APEX version metadata (release string + import date stamp)
+APEX_VERSION_META = {
+    "22.2": ("22.2.0", "2022.10.07"),
+    "23.1": ("23.1.0", "2023.04.18"),
+    "23.2": ("23.2.0", "2023.10.31"),
+    "24.1": ("24.1.0", "2024.05.22"),
+    "24.2": ("24.2.0", "2024.11.05"),
+    "26.1": ("26.1.0", "2026.04.30"),
+}
+
+
+def _release(version: str):
+    return APEX_VERSION_META.get(version, APEX_VERSION_META["24.2"])
+
+
 def _floating_label_supported(version: str) -> bool:
-    """floatingLabel template option is available 22.2+."""
     try:
-        major = float(version)
-        return major >= 22.2
+        return float(version) >= 22.2
     except ValueError:
         return True
 
 
-def _version_header(version: str) -> str:
-    """Comments documenting which APEX version syntax is targeted."""
-    return f"-- Target APEX Version: {version}\n"
+def _emit_import_begin(workspace: str, app_id: int, version: str) -> str:
+    release, date = _release(version)
+    return (
+        "wwv_flow_imp.import_begin(\n"
+        f"  p_version_yyyy_mm_dd => '{date}',\n"
+        f"  p_release => '{release}',\n"
+        f"  p_default_workspace_id => apex_util.find_security_group_id('{_sanitize(workspace)}'),\n"
+        f"  p_default_application_id => {app_id},\n"
+        "  p_default_id_offset => 0,\n"
+        f"  p_default_owner => '{_sanitize(workspace)}');\n"
+    )
+
+
+def _emit_import_end() -> str:
+    return (
+        "wwv_flow_imp.import_end(\n"
+        "  p_auto_install_sup_obj => nvl(wwv_flow_application_install.get_auto_install_sup_obj, false));\n"
+        "commit;\n"
+    )
 
 
 def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], version: str) -> str:
@@ -67,32 +100,29 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
     )
 
     out.append(f"-- Page {page_id}: Form - {name}")
-    out.append("apex_application.create_page(")
+    out.append("wwv_flow_imp_page.create_page(")
     out.append(f"  p_id => {page_id},")
     out.append(f"  p_name => '{_sanitize(_label(name))}',")
     out.append(f"  p_step_title => '{_sanitize(_label(name))}',")
-    out.append("  p_page_mode => 'NORMAL',")
-    out.append("  p_step_template => 'STANDARD',")
+    out.append("  p_autocomplete_on_off => 'OFF',")
+    out.append("  p_page_template_options => '#DEFAULT#',")
     out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}',")
-    out.append("  p_autocomplete_on_off => 'OFF');")
+    out.append("  p_protection_level => 'C');")
     out.append("")
 
-    # Form region
-    out.append("apex_application.create_page_plug(")
+    out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f"  p_id => {region_id},")
-    out.append("  p_plug_name => 'Form',")
+    out.append(f"  p_plug_name => '{_sanitize(_label(name))} Form',")
     out.append("  p_region_template_options => '#DEFAULT#',")
-    out.append("  p_plug_template => 'STANDARD',")
     out.append("  p_plug_display_sequence => 10,")
-    out.append("  p_plug_source_type => 'NATIVE_FORM',")
-    out.append(f"  p_plug_css_classes => '{_sanitize(css_classes)}');")
+    out.append("  p_plug_source_type => 'NATIVE_HTML',")
+    out.append("  p_plug_source => '<!-- React form region -->');")
     out.append("")
 
-    # Items
     seq = 10
     for field in fields[:30]:
         item_id = ids.next()
-        out.append("apex_application.create_page_item(")
+        out.append("wwv_flow_imp_page.create_page_item(")
         out.append(f"  p_id => {item_id},")
         out.append(f"  p_name => 'P{page_id}_{field.upper()}',")
         out.append(f"  p_item_sequence => {seq},")
@@ -103,38 +133,36 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
         out.append("")
         seq += 10
 
-    # Buttons (top-right EDIT region position)
     save_btn = ids.next()
     cancel_btn = ids.next()
-    out.append("apex_application.create_page_button(")
+    out.append("wwv_flow_imp_page.create_page_button(")
     out.append(f"  p_id => {save_btn},")
-    out.append(f"  p_button_sequence => 10,")
+    out.append("  p_button_sequence => 10,")
     out.append(f"  p_button_plug_id => {region_id},")
-    out.append(f"  p_button_name => 'SAVE',")
-    out.append(f"  p_button_action => 'SUBMIT',")
-    out.append(f"  p_button_template_options => '#DEFAULT#:t-Button--iconRight',")
-    out.append(f"  p_button_template_id => 'HOT',")
-    out.append(f"  p_button_position => 'EDIT',")
-    out.append(f"  p_button_image_alt => 'Save');")
+    out.append("  p_button_name => 'SAVE',")
+    out.append("  p_button_action => 'SUBMIT',")
+    out.append("  p_button_template_options => '#DEFAULT#:t-Button--iconRight',")
+    out.append("  p_button_position => 'EDIT',")
+    out.append("  p_button_image_alt => 'Save');")
     out.append("")
-    out.append("apex_application.create_page_button(")
+    out.append("wwv_flow_imp_page.create_page_button(")
     out.append(f"  p_id => {cancel_btn},")
-    out.append(f"  p_button_sequence => 20,")
+    out.append("  p_button_sequence => 20,")
     out.append(f"  p_button_plug_id => {region_id},")
-    out.append(f"  p_button_name => 'CANCEL',")
-    out.append(f"  p_button_action => 'REDIRECT_PAGE',")
-    out.append(f"  p_button_position => 'EDIT',")
-    out.append(f"  p_button_image_alt => 'Cancel');")
+    out.append("  p_button_name => 'CANCEL',")
+    out.append("  p_button_action => 'REDIRECT_PAGE',")
+    out.append("  p_button_position => 'EDIT',")
+    out.append("  p_button_image_alt => 'Cancel');")
     out.append("")
 
-    # Process
     proc_id = ids.next()
-    out.append("apex_application.create_page_process(")
+    out.append("wwv_flow_imp_page.create_page_process(")
     out.append(f"  p_id => {proc_id},")
-    out.append(f"  p_process_sequence => 10,")
-    out.append(f"  p_process_point => 'AFTER_SUBMIT',")
-    out.append(f"  p_process_type => 'NATIVE_FORM_DML',")
+    out.append("  p_process_sequence => 10,")
+    out.append("  p_process_point => 'AFTER_SUBMIT',")
+    out.append("  p_process_type => 'NATIVE_PLSQL',")
     out.append(f"  p_process_name => 'Process Form {_label(name)}',")
+    out.append("  p_process_sql_clob => 'begin null; end;',")
     out.append(f"  p_process_when_button_id => {save_btn});")
     out.append("")
     return "\n".join(out)
@@ -146,24 +174,23 @@ def generate_page_report(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -
     css_classes = " ".join(comp.get("classnames", [])[:5])
     out = []
     out.append(f"-- Page {page_id}: Interactive Report - {name}")
-    out.append("apex_application.create_page(")
+    out.append("wwv_flow_imp_page.create_page(")
     out.append(f"  p_id => {page_id},")
     out.append(f"  p_name => '{_sanitize(_label(name))}',")
     out.append(f"  p_step_title => '{_sanitize(_label(name))}',")
-    out.append("  p_page_mode => 'NORMAL',")
-    out.append("  p_step_template => 'STANDARD',")
-    out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}');")
+    out.append("  p_autocomplete_on_off => 'OFF',")
+    out.append("  p_page_template_options => '#DEFAULT#',")
+    out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}',")
+    out.append("  p_protection_level => 'C');")
     out.append("")
 
-    out.append("apex_application.create_page_plug(")
+    out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f"  p_id => {region_id},")
     out.append(f"  p_plug_name => '{_sanitize(_label(name))} Report',")
     out.append("  p_region_template_options => '#DEFAULT#',")
-    out.append("  p_plug_template => 'STANDARD',")
     out.append("  p_plug_display_sequence => 10,")
     out.append("  p_plug_source_type => 'NATIVE_IR',")
-    out.append("  p_plug_source => 'select rownum as id, ''Sample Row '' || rownum as label, sysdate as created_at from dual connect by level <= 25',")
-    out.append(f"  p_plug_css_classes => '{_sanitize(css_classes)}');")
+    out.append("  p_plug_source => 'select rownum as id, ''Sample Row '' || rownum as label, sysdate as created_at from dual connect by level <= 25');")
     out.append("")
     return "\n".join(out)
 
@@ -173,64 +200,105 @@ def generate_page_dashboard(ids: IdAllocator, page_id: int, comp: Dict[str, Any]
     css_classes = " ".join(comp.get("classnames", [])[:5])
     out = []
     out.append(f"-- Page {page_id}: Dashboard - {name}")
-    out.append("apex_application.create_page(")
+    out.append("wwv_flow_imp_page.create_page(")
     out.append(f"  p_id => {page_id},")
     out.append(f"  p_name => '{_sanitize(_label(name))}',")
     out.append(f"  p_step_title => '{_sanitize(_label(name))}',")
-    out.append("  p_page_mode => 'NORMAL',")
-    out.append("  p_step_template => 'STANDARD',")
-    out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}');")
+    out.append("  p_autocomplete_on_off => 'OFF',")
+    out.append("  p_page_template_options => '#DEFAULT#',")
+    out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}',")
+    out.append("  p_protection_level => 'C');")
     out.append("")
 
-    # Stat cards row
     for i, metric in enumerate(("Total", "Active", "Pending", "Completed"), start=1):
         rid = ids.next()
-        out.append("apex_application.create_page_plug(")
+        out.append("wwv_flow_imp_page.create_page_plug(")
         out.append(f"  p_id => {rid},")
         out.append(f"  p_plug_name => '{metric}',")
         out.append("  p_region_template_options => '#DEFAULT#:t-Region--scrollBody',")
-        out.append("  p_plug_template => 'BLANK_WITH_ATTRIBUTES',")
         out.append(f"  p_plug_display_sequence => {i * 10},")
-        out.append("  p_plug_display_column => " + str(((i - 1) % 4) + 1) + ",")
         out.append("  p_plug_source_type => 'NATIVE_HTML',")
         out.append(f"  p_plug_source => '<div class=\"stat-card\"><h3>{metric}</h3><p class=\"stat-value\">{i * 124}</p></div>');")
         out.append("")
 
-    # Chart region
     chart_id = ids.next()
-    out.append("apex_application.create_page_plug(")
+    out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f"  p_id => {chart_id},")
     out.append("  p_plug_name => 'Trend Chart',")
     out.append("  p_region_template_options => '#DEFAULT#',")
-    out.append("  p_plug_template => 'STANDARD',")
     out.append("  p_plug_display_sequence => 100,")
     out.append("  p_plug_source_type => 'NATIVE_JET_CHART',")
-    out.append(f"  p_plug_css_classes => '{_sanitize(css_classes)}');")
+    out.append("  p_plug_source => 'select level as x, dbms_random.value(10, 90) as y from dual connect by level <= 12');")
     out.append("")
     return "\n".join(out)
 
 
-def generate_css_static_file(css_content: str, app_id: int) -> str:
-    """Generate wwv_flow_imp_shared.create_app_static_file call."""
-    # Limit content to safe size
-    safe_css = css_content[:200_000] if css_content else "/* react theme placeholder */"
-    # Escape single quotes
-    safe_css = safe_css.replace("'", "''")
-    # Build the SQL with q-quoted string for safety
+def _pick_q_delim(text: str):
+    """Pick a q-quote delimiter pair not present in text."""
+    candidates = [("[", "]"), ("{", "}"), ("<", ">"), ("!", "!"), ("#", "#"), ("~", "~")]
+    for opn, cls in candidates:
+        if f"{cls}'" not in text:
+            return opn, cls
+    # Last resort - aggressively strip terminator
+    return "#", "#"
+
+
+def _chunk_css(css: str, max_bytes: int = 30000) -> List[str]:
+    """Split CSS into ≤max_bytes UTF-8 chunks at safe boundaries."""
+    if not css:
+        return ["/* empty */"]
+    chunks = []
+    remaining = css
+    while remaining:
+        if len(remaining.encode("utf-8")) <= max_bytes:
+            chunks.append(remaining)
+            break
+        # Find a safe split near max_bytes (prefer newline, then space)
+        cut = max_bytes
+        # Walk back to avoid splitting in the middle of a multi-byte char
+        slice_ = remaining[:cut]
+        while len(slice_.encode("utf-8")) > max_bytes and cut > 0:
+            cut -= 128
+            slice_ = remaining[:cut]
+        # Prefer newline boundary
+        nl = slice_.rfind("\n")
+        if nl > max_bytes // 2:
+            cut = nl + 1
+            slice_ = remaining[:cut]
+        chunks.append(slice_)
+        remaining = remaining[cut:]
+    return chunks
+
+
+def generate_css_block(css_content: str, app_id: int, workspace: str, version: str) -> str:
+    """Standalone PL/SQL block that imports the react_theme.css static file.
+
+    Handles PL/SQL 32K string-literal limit by splitting CSS into ≤30000-byte
+    chunks, converting each chunk to RAW, and appending into a BLOB via
+    dbms_lob.writeappend(). Final BLOB is passed to create_app_static_file.
+    """
+    css = css_content if css_content else "/* react theme placeholder */"
+    chunks = _chunk_css(css, max_bytes=16000)  # Keep well below 32767 for safety
+
     out = []
-    out.append("-- React theme static application file")
     out.append("declare")
-    out.append("  l_clob clob;")
+    out.append("  l_blob blob;")
+    out.append("  l_raw raw(32767);")
     out.append("begin")
-    out.append("  l_clob := q'[")
-    out.append(safe_css.replace("]'", "] '"))
-    out.append("  ]';")
+    out.append("  " + _emit_import_begin(workspace, app_id, version).replace("\n", "\n  ").rstrip())
+    out.append("  dbms_lob.createtemporary(l_blob, true);")
+    for chunk in chunks:
+        opn, cls = _pick_q_delim(chunk)
+        out.append(f"  l_raw := utl_raw.cast_to_raw(q'{opn}{chunk}{cls}');")
+        out.append("  dbms_lob.writeappend(l_blob, utl_raw.length(l_raw), l_raw);")
     out.append("  wwv_flow_imp_shared.create_app_static_file(")
     out.append(f"    p_flow_id => {app_id},")
     out.append("    p_file_name => 'react_theme.css',")
     out.append("    p_mime_type => 'text/css',")
     out.append("    p_file_charset => 'utf-8',")
-    out.append("    p_file_content => utl_raw.cast_to_raw(l_clob));")
+    out.append("    p_file_content => l_blob);")
+    out.append("  dbms_lob.freetemporary(l_blob);")
+    out.append("  " + _emit_import_end().replace("\n", "\n  ").rstrip())
     out.append("end;")
     out.append("/")
     return "\n".join(out)
@@ -238,39 +306,32 @@ def generate_css_static_file(css_content: str, app_id: int) -> str:
 
 def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: str) -> Dict[str, Any]:
     ids = IdAllocator()
-    blocks = []
-    blocks.append(_version_header(version))
-    blocks.append("-- ============================================================")
-    blocks.append("-- React → Oracle APEX SQL Migration Script")
-    blocks.append(f"-- Workspace: {workspace}")
-    blocks.append(f"-- Application ID: {app_id}")
-    blocks.append(f"-- Detected components: {len(parsed['components'])}")
-    blocks.append("-- ============================================================")
-    blocks.append("")
-    blocks.append("begin")
-    blocks.append("  apex_util.set_security_group_id(")
-    blocks.append(f"    apex_util.find_security_group_id('{_sanitize(workspace)}')")
-    blocks.append("  );")
-    blocks.append(f"  apex_application.g_flow_id := {app_id};")
-    blocks.append("end;")
-    blocks.append("/")
-    blocks.append("")
+    release, date = _release(version)
+
+    header = []
+    header.append(f"-- Target APEX Version: {version} (release {release})")
+    header.append("-- ============================================================")
+    header.append("-- React → Oracle APEX SQL Migration Script")
+    header.append(f"-- Workspace: {workspace}")
+    header.append(f"-- Application ID: {app_id}")
+    header.append(f"-- Detected components: {len(parsed['components'])}")
+    header.append("-- ============================================================")
+    header.append("")
+
+    body = []
+    body.append("begin")
+    body.append(_emit_import_begin(workspace, app_id, version))
 
     page_summary: List[Dict[str, Any]] = []
     page_seq = 100
     for comp in parsed["components"][:40]:
         page_seq += 1
-        blocks.append("begin")
         if comp["type"] == "form":
-            blocks.append(generate_page_form(ids, page_seq, comp, version))
+            body.append(generate_page_form(ids, page_seq, comp, version))
         elif comp["type"] == "report":
-            blocks.append(generate_page_report(ids, page_seq, comp))
+            body.append(generate_page_report(ids, page_seq, comp))
         elif comp["type"] == "dashboard":
-            blocks.append(generate_page_dashboard(ids, page_seq, comp))
-        blocks.append("commit;")
-        blocks.append("end;")
-        blocks.append("/")
-        blocks.append("")
+            body.append(generate_page_dashboard(ids, page_seq, comp))
         page_summary.append({
             "page_id": page_seq,
             "name": comp["name"],
@@ -278,11 +339,16 @@ def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: s
             "fields": len(comp.get("fields", [])),
         })
 
-    # CSS static file
-    blocks.append("-- ============================================================")
-    blocks.append("-- Static Application File: react_theme.css")
-    blocks.append("-- ============================================================")
-    blocks.append(generate_css_static_file(parsed.get("css", ""), app_id))
+    body.append(_emit_import_end())
+    body.append("end;")
+    body.append("/")
+    body.append("")
 
-    sql = "\n".join(blocks)
+    # CSS static file (separate standalone block)
+    body.append("-- ============================================================")
+    body.append("-- Static Application File: react_theme.css")
+    body.append("-- ============================================================")
+    body.append(generate_css_block(parsed.get("css", ""), app_id, workspace, version))
+
+    sql = "\n".join(header + body)
     return {"sql": sql, "pages": page_summary, "component_count": len(parsed["components"])}
