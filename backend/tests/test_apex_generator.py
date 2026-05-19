@@ -99,11 +99,13 @@ def test_generate_success_242(zip_bytes):
     assert "wwv_flow_imp_page.create_page_item" in sql
     assert "floatingLabel" in sql
 
-    # report detection -> NATIVE_IR
-    assert "NATIVE_IR" in sql
+    # report detection -> Classic Report (SQL_REPORT used in place of NATIVE_IR
+    # to avoid worksheet sub-record dependency that caused ORA-01403 at runtime)
+    assert "NATIVE_SQL_REPORT" in sql
 
-    # dashboard -> stat cards + chart region (NATIVE_JET_CHART)
-    assert "NATIVE_JET_CHART" in sql
+    # dashboard -> stat cards + trend region (all HTML/SQL_REPORT — no JET_CHART
+    # sub-records needed)
+    assert "NATIVE_HTML" in sql
 
     # Page types detected
     types = {p["type"] for p in body["pages"]}

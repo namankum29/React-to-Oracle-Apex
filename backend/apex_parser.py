@@ -112,27 +112,40 @@ def parse_component(path: Path, root: Path) -> Dict[str, Any]:
     except Exception:
         return None
 
-    name_match = COMPONENT_NAME_RE.search(text)
-    name = name_match.group(1) if name_match else path.stem
+    # Prefer the filename (without extension) as the page name — it's the most
+    # stable signal in real React projects. The earlier regex-based approach
+    # picked up TypeScript type aliases and constants by mistake.
+    name = path.stem
+
+    rel = path.relative_to(root).as_posix().lower()
+    file_base = path.stem.lower()
 
     has_form_tag = "<form" in text.lower() or bool(FORM_INPUT_RE.search(text))
+    has_empty_form = bool(EMPTY_FORM_RE.search(text))
     has_table = bool(TABLE_RE.search(text))
     has_map_render = bool(MAP_RENDER_RE.search(text))
     has_recharts = bool(RECHARTS_RE.search(text)) or bool(CHART_TAG_RE.search(text))
-    has_stat_cards = bool(STAT_CARD_RE.search(text))
+    has_stat_cards = "<statcard" in text.lower() or "stat-card" in text.lower()
 
-    fields = extract_field_names(text) if has_form_tag else []
+    fields = extract_field_names(text) if (has_form_tag or has_empty_form) else []
     classnames = extract_classnames(text)
 
+    # Classification — name-based heuristics first, then content
     page_type = None
-    if has_recharts or (has_stat_cards and "card" in text.lower()):
+    if file_base.startswith("dashboard") or file_base.endswith("dashboard"):
         page_type = "dashboard"
-    elif has_form_tag and fields:
+    elif file_base.startswith("report") or file_base.endswith("report") or file_base.endswith("reports"):
+        page_type = "report"
+    elif has_recharts and has_stat_cards:
+        page_type = "dashboard"
+    elif has_empty_form and (has_table or has_map_render):
+        page_type = "form"  # CRUD page – will render both form region and list region
+    elif has_empty_form or (has_form_tag and fields):
         page_type = "form"
     elif has_table or has_map_render:
         page_type = "report"
     else:
-        return None  # Skip non-page components
+        return None
 
     return {
         "name": name,
@@ -141,14 +154,23 @@ def parse_component(path: Path, root: Path) -> Dict[str, Any]:
         "fields": fields,
         "classnames": classnames[:20],
         "has_chart": has_recharts,
+        "has_table": has_table or has_map_render,
     }
 
 
 def parse_project(root: Path) -> Dict[str, Any]:
-    files = list_source_files(root)
+    all_files = list_source_files(root)
+
+    # Prefer files under a "pages" or "views" or "screens" directory if one
+    # exists — those are the real navigable pages. Otherwise fall back to all.
+    page_dirs = ("pages", "views", "screens", "routes")
+    scoped = [f for f in all_files
+              if any(part.lower() in page_dirs for part in f.relative_to(root).parts)]
+    target_files = scoped if scoped else all_files
+
     components = []
     seen_names = set()
-    for f in files:
+    for f in target_files:
         comp = parse_component(f, root)
         if comp and comp["name"] not in seen_names:
             components.append(comp)
@@ -173,5 +195,5 @@ def parse_project(root: Path) -> Dict[str, Any]:
     return {
         "components": components,
         "css": css_compiled,
-        "file_count": len(files),
+        "file_count": len(all_files),
     }

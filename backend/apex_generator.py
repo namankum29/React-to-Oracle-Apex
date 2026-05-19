@@ -89,8 +89,8 @@ def _emit_import_end() -> str:
 def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], version: str) -> str:
     name = comp["name"]
     fields = comp["fields"] or ["name", "email"]
-    css_classes = " ".join(comp.get("classnames", [])[:5])
     region_id = ids.next()
+    list_region_id = ids.next() if comp.get("has_table") else None
     out = []
 
     item_template = (
@@ -105,18 +105,17 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
     out.append(f"  p_name => '{_sanitize(_label(name))}',")
     out.append(f"  p_step_title => '{_sanitize(_label(name))}',")
     out.append("  p_autocomplete_on_off => 'OFF',")
-    out.append("  p_page_template_options => '#DEFAULT#',")
-    out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}',")
-    out.append("  p_protection_level => 'C');")
+    out.append("  p_page_template_options => '#DEFAULT#');")
     out.append("")
 
+    # Form region (HTML placeholder so it always renders without sub-records)
     out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f"  p_id => {region_id},")
     out.append(f"  p_plug_name => '{_sanitize(_label(name))} Form',")
     out.append("  p_region_template_options => '#DEFAULT#',")
     out.append("  p_plug_display_sequence => 10,")
     out.append("  p_plug_source_type => 'NATIVE_HTML',")
-    out.append("  p_plug_source => '<!-- React form region -->');")
+    out.append("  p_plug_source => '<!-- Form region for " + _sanitize(_label(name)) + " -->');")
     out.append("")
 
     seq = 10
@@ -165,39 +164,49 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
     out.append("  p_process_sql_clob => 'begin null; end;',")
     out.append(f"  p_process_when_button_id => {save_btn});")
     out.append("")
+
+    # Optional list region (Classic Report — only needs SQL source, no sub-records)
+    if list_region_id is not None:
+        out.append("wwv_flow_imp_page.create_page_plug(")
+        out.append(f"  p_id => {list_region_id},")
+        out.append(f"  p_plug_name => '{_sanitize(_label(name))} List',")
+        out.append("  p_region_template_options => '#DEFAULT#',")
+        out.append("  p_plug_display_sequence => 20,")
+        out.append("  p_plug_source_type => 'NATIVE_SQL_REPORT',")
+        out.append("  p_plug_source => 'select rownum as id, ''Row '' || rownum as label from dual connect by level <= 10');")
+        out.append("")
+
     return "\n".join(out)
 
 
 def generate_page_report(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
     name = comp["name"]
     region_id = ids.next()
-    css_classes = " ".join(comp.get("classnames", [])[:5])
     out = []
-    out.append(f"-- Page {page_id}: Interactive Report - {name}")
+    out.append(f"-- Page {page_id}: Report - {name}")
     out.append("wwv_flow_imp_page.create_page(")
     out.append(f"  p_id => {page_id},")
     out.append(f"  p_name => '{_sanitize(_label(name))}',")
     out.append(f"  p_step_title => '{_sanitize(_label(name))}',")
     out.append("  p_autocomplete_on_off => 'OFF',")
-    out.append("  p_page_template_options => '#DEFAULT#',")
-    out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}',")
-    out.append("  p_protection_level => 'C');")
+    out.append("  p_page_template_options => '#DEFAULT#');")
     out.append("")
 
+    # Classic Report (no sub-records required) instead of NATIVE_IR which
+    # demands a worksheet definition that we don't emit.
     out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f"  p_id => {region_id},")
-    out.append(f"  p_plug_name => '{_sanitize(_label(name))} Report',")
+    out.append(f"  p_plug_name => '{_sanitize(_label(name))}',")
     out.append("  p_region_template_options => '#DEFAULT#',")
     out.append("  p_plug_display_sequence => 10,")
-    out.append("  p_plug_source_type => 'NATIVE_IR',")
-    out.append("  p_plug_source => 'select rownum as id, ''Sample Row '' || rownum as label, sysdate as created_at from dual connect by level <= 25');")
+    out.append("  p_plug_source_type => 'NATIVE_SQL_REPORT',")
+    out.append("  p_plug_source => 'select rownum as id, ''Sample '' || rownum as label, sysdate as created_at from dual connect by level <= 25');")
     out.append("")
     return "\n".join(out)
 
 
 def generate_page_dashboard(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
     name = comp["name"]
-    css_classes = " ".join(comp.get("classnames", [])[:5])
     out = []
     out.append(f"-- Page {page_id}: Dashboard - {name}")
     out.append("wwv_flow_imp_page.create_page(")
@@ -205,30 +214,30 @@ def generate_page_dashboard(ids: IdAllocator, page_id: int, comp: Dict[str, Any]
     out.append(f"  p_name => '{_sanitize(_label(name))}',")
     out.append(f"  p_step_title => '{_sanitize(_label(name))}',")
     out.append("  p_autocomplete_on_off => 'OFF',")
-    out.append("  p_page_template_options => '#DEFAULT#',")
-    out.append(f"  p_page_css_classes => '{_sanitize(css_classes)}',")
-    out.append("  p_protection_level => 'C');")
+    out.append("  p_page_template_options => '#DEFAULT#');")
     out.append("")
 
+    # Stat cards as plain HTML regions (no plugin sub-records needed)
     for i, metric in enumerate(("Total", "Active", "Pending", "Completed"), start=1):
         rid = ids.next()
         out.append("wwv_flow_imp_page.create_page_plug(")
         out.append(f"  p_id => {rid},")
         out.append(f"  p_plug_name => '{metric}',")
-        out.append("  p_region_template_options => '#DEFAULT#:t-Region--scrollBody',")
+        out.append("  p_region_template_options => '#DEFAULT#',")
         out.append(f"  p_plug_display_sequence => {i * 10},")
         out.append("  p_plug_source_type => 'NATIVE_HTML',")
-        out.append(f"  p_plug_source => '<div class=\"stat-card\"><h3>{metric}</h3><p class=\"stat-value\">{i * 124}</p></div>');")
+        out.append(f"  p_plug_source => '<div class=\"t-Card t-Card--stat\"><h3>{metric}</h3><p class=\"stat-value\" style=\"font-size:2rem;font-weight:600;\">{i * 124}</p></div>');")
         out.append("")
 
-    chart_id = ids.next()
+    # Trend "chart" as a SQL-driven Classic Report (renders as table — safe)
+    trend_id = ids.next()
     out.append("wwv_flow_imp_page.create_page_plug(")
-    out.append(f"  p_id => {chart_id},")
-    out.append("  p_plug_name => 'Trend Chart',")
+    out.append(f"  p_id => {trend_id},")
+    out.append("  p_plug_name => 'Trend',")
     out.append("  p_region_template_options => '#DEFAULT#',")
     out.append("  p_plug_display_sequence => 100,")
-    out.append("  p_plug_source_type => 'NATIVE_JET_CHART',")
-    out.append("  p_plug_source => 'select level as x, dbms_random.value(10, 90) as y from dual connect by level <= 12');")
+    out.append("  p_plug_source_type => 'NATIVE_SQL_REPORT',")
+    out.append("  p_plug_source => 'select to_char(sysdate - level + 1, ''YYYY-MM-DD'') as day, round(dbms_random.value(50, 150)) as value from dual connect by level <= 12');")
     out.append("")
     return "\n".join(out)
 
