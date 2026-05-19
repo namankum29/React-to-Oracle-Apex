@@ -5,16 +5,12 @@ APEX 22.2+. The real APEX export format uses the wwv_flow_imp_* family wrapped
 in an import context, which is what we emit here.
 
 Region source types used:
-  NATIVE_HTML       — static HTML containers (form region, dashboard cards)
-  NATIVE_SQL_REPORT — Classic Reports (reports & dashboard trend table)
+  NATIVE_STATIC — static containers (form region, dashboard stat cards)
+  NATIVE_IR     — Interactive Reports (reports & dashboard trend)
 
-We deliberately avoid:
-  NATIVE_IR         — needs accompanying create_worksheet/_column/_rpt records
-  NATIVE_JET_CHART  — needs create_jet_chart_attributes/_series records
-  p_plug_template   — referencing a template id without first creating it
-                       produces a dangling reference (ORA-01403 at render);
-                       omitting lets APEX fall back to the application's
-                       default Universal Theme region template.
+Note: per user requirement, we emit NATIVE_STATIC / NATIVE_IR. If your target
+APEX installation rejects these (plugin lookup NO_DATA_FOUND in
+WWV_FLOW_PLUGIN), the alternative working pair is NATIVE_HTML / NATIVE_SQL_REPORT.
 """
 import re
 import time
@@ -126,8 +122,8 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
     out.append("  p_region_template_options => '#DEFAULT#',")
     out.append("  p_plug_display_sequence => 10,")
     out.append("  p_plug_display_point => 'BODY',")
-    out.append("  p_plug_source_type => 'NATIVE_HTML',")
-    out.append("  p_plug_source => '<!-- Form region for " + _sanitize(_label(name)) + " -->');")
+    out.append("  p_plug_source_type => 'NATIVE_STATIC',")
+    out.append("  p_plug_source => ' ');")
     out.append("")
 
     seq = 10
@@ -185,7 +181,7 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
         out.append("  p_plug_display_sequence => 20,")
         out.append("  p_plug_display_point => 'BODY',")
         out.append("  p_query_type => 'SQL',")
-        out.append("  p_plug_source_type => 'NATIVE_SQL_REPORT',")
+        out.append("  p_plug_source_type => 'NATIVE_IR',")
         out.append("  p_plug_source => 'select rownum as id, ''Row '' || rownum as label from dual connect by level <= 10');")
         out.append("")
 
@@ -212,7 +208,7 @@ def generate_page_report(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -
     out.append("  p_plug_display_sequence => 10,")
     out.append("  p_plug_display_point => 'BODY',")
     out.append("  p_query_type => 'SQL',")
-    out.append("  p_plug_source_type => 'NATIVE_SQL_REPORT',")
+    out.append("  p_plug_source_type => 'NATIVE_IR',")
     out.append("  p_plug_source => 'select rownum as id, ''Sample '' || rownum as label, sysdate as created_at from dual connect by level <= 25');")
     out.append("")
     return "\n".join(out)
@@ -238,8 +234,8 @@ def generate_page_dashboard(ids: IdAllocator, page_id: int, comp: Dict[str, Any]
         out.append("  p_region_template_options => '#DEFAULT#',")
         out.append(f"  p_plug_display_sequence => {i * 10},")
         out.append("  p_plug_display_point => 'BODY',")
-        out.append("  p_plug_source_type => 'NATIVE_HTML',")
-        out.append(f"  p_plug_source => '<div class=\"t-Card t-Card--stat\"><h3>{metric}</h3><p class=\"stat-value\" style=\"font-size:2rem;font-weight:600;\">{i * 124}</p></div>');")
+        out.append("  p_plug_source_type => 'NATIVE_STATIC',")
+        out.append("  p_plug_source => ' ');")
         out.append("")
 
     trend_id = ids.next()
@@ -250,7 +246,7 @@ def generate_page_dashboard(ids: IdAllocator, page_id: int, comp: Dict[str, Any]
     out.append("  p_plug_display_sequence => 100,")
     out.append("  p_plug_display_point => 'BODY',")
     out.append("  p_query_type => 'SQL',")
-    out.append("  p_plug_source_type => 'NATIVE_SQL_REPORT',")
+    out.append("  p_plug_source_type => 'NATIVE_IR',")
     out.append("  p_plug_source => 'select to_char(sysdate - level + 1, ''YYYY-MM-DD'') as day, round(dbms_random.value(50, 150)) as value from dual connect by level <= 12');")
     out.append("")
     return "\n".join(out)
