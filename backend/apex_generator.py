@@ -1,11 +1,23 @@
 """APEX SQL generator - emits wwv_flow_imp_page.* PL/SQL via import_begin/import_end.
 
 The internal `apex_application.create_*` procedures are NOT publicly callable in
-APEX 22.2+ (PLS-00302). The real APEX export format uses the wwv_flow_imp_*
-package family wrapped in an import context. That's what we emit here.
+APEX 22.2+. The real APEX export format uses the wwv_flow_imp_* family wrapped
+in an import context, which is what we emit here.
+
+Region source types used:
+  NATIVE_HTML       — static HTML containers (form region, dashboard cards)
+  NATIVE_SQL_REPORT — Classic Reports (reports & dashboard trend table)
+
+We deliberately avoid:
+  NATIVE_IR         — needs accompanying create_worksheet/_column/_rpt records
+  NATIVE_JET_CHART  — needs create_jet_chart_attributes/_series records
+  p_plug_template   — referencing a template id without first creating it
+                       produces a dangling reference (ORA-01403 at render);
+                       omitting lets APEX fall back to the application's
+                       default Universal Theme region template.
 """
-import time
 import re
+import time
 from typing import Dict, List, Any
 
 
@@ -43,7 +55,6 @@ class IdAllocator:
         return self._cur
 
 
-# APEX version metadata (release string + import date stamp)
 APEX_VERSION_META = {
     "22.2": ("22.2.0", "2022.10.07"),
     "23.1": ("23.1.0", "2023.04.18"),
@@ -113,7 +124,6 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
     out.append(f"  p_id => {region_id},")
     out.append(f"  p_plug_name => '{_sanitize(_label(name))} Form',")
     out.append("  p_region_template_options => '#DEFAULT#',")
-    out.append("  p_plug_template => l_region_tpl,")
     out.append("  p_plug_display_sequence => 10,")
     out.append("  p_plug_display_point => 'BODY',")
     out.append("  p_plug_source_type => 'NATIVE_HTML',")
@@ -167,13 +177,11 @@ def generate_page_form(ids: IdAllocator, page_id: int, comp: Dict[str, Any], ver
     out.append(f"  p_process_when_button_id => {save_btn});")
     out.append("")
 
-    # Optional list region (Classic Report — needs only SQL source)
     if list_region_id is not None:
         out.append("wwv_flow_imp_page.create_page_plug(")
         out.append(f"  p_id => {list_region_id},")
         out.append(f"  p_plug_name => '{_sanitize(_label(name))} List',")
         out.append("  p_region_template_options => '#DEFAULT#',")
-        out.append("  p_plug_template => l_region_tpl,")
         out.append("  p_plug_display_sequence => 20,")
         out.append("  p_plug_display_point => 'BODY',")
         out.append("  p_query_type => 'SQL',")
@@ -197,12 +205,10 @@ def generate_page_report(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -
     out.append("  p_page_template_options => '#DEFAULT#');")
     out.append("")
 
-    # Classic Report (BODY display point + query type set explicitly)
     out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f"  p_id => {region_id},")
     out.append(f"  p_plug_name => '{_sanitize(_label(name))}',")
     out.append("  p_region_template_options => '#DEFAULT#',")
-    out.append("  p_plug_template => l_region_tpl,")
     out.append("  p_plug_display_sequence => 10,")
     out.append("  p_plug_display_point => 'BODY',")
     out.append("  p_query_type => 'SQL',")
@@ -224,27 +230,23 @@ def generate_page_dashboard(ids: IdAllocator, page_id: int, comp: Dict[str, Any]
     out.append("  p_page_template_options => '#DEFAULT#');")
     out.append("")
 
-    # Stat cards as plain HTML regions (no plugin sub-records needed)
     for i, metric in enumerate(("Total", "Active", "Pending", "Completed"), start=1):
         rid = ids.next()
         out.append("wwv_flow_imp_page.create_page_plug(")
         out.append(f"  p_id => {rid},")
         out.append(f"  p_plug_name => '{metric}',")
         out.append("  p_region_template_options => '#DEFAULT#',")
-        out.append("  p_plug_template => l_region_tpl,")
         out.append(f"  p_plug_display_sequence => {i * 10},")
         out.append("  p_plug_display_point => 'BODY',")
         out.append("  p_plug_source_type => 'NATIVE_HTML',")
         out.append(f"  p_plug_source => '<div class=\"t-Card t-Card--stat\"><h3>{metric}</h3><p class=\"stat-value\" style=\"font-size:2rem;font-weight:600;\">{i * 124}</p></div>');")
         out.append("")
 
-    # Trend region (Classic Report)
     trend_id = ids.next()
     out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f"  p_id => {trend_id},")
     out.append("  p_plug_name => 'Trend',")
     out.append("  p_region_template_options => '#DEFAULT#',")
-    out.append("  p_plug_template => l_region_tpl,")
     out.append("  p_plug_display_sequence => 100,")
     out.append("  p_plug_display_point => 'BODY',")
     out.append("  p_query_type => 'SQL',")
@@ -254,18 +256,17 @@ def generate_page_dashboard(ids: IdAllocator, page_id: int, comp: Dict[str, Any]
     return "\n".join(out)
 
 
+# ----- CSS static file helpers -----
+
 def _pick_q_delim(text: str):
-    """Pick a q-quote delimiter pair not present in text."""
     candidates = [("[", "]"), ("{", "}"), ("<", ">"), ("!", "!"), ("#", "#"), ("~", "~")]
     for opn, cls in candidates:
         if f"{cls}'" not in text:
             return opn, cls
-    # Last resort - aggressively strip terminator
     return "#", "#"
 
 
-def _chunk_css(css: str, max_bytes: int = 30000) -> List[str]:
-    """Split CSS into ≤max_bytes UTF-8 chunks at safe boundaries."""
+def _chunk_css(css: str, max_bytes: int = 16000) -> List[str]:
     if not css:
         return ["/* empty */"]
     chunks = []
@@ -274,14 +275,11 @@ def _chunk_css(css: str, max_bytes: int = 30000) -> List[str]:
         if len(remaining.encode("utf-8")) <= max_bytes:
             chunks.append(remaining)
             break
-        # Find a safe split near max_bytes (prefer newline, then space)
         cut = max_bytes
-        # Walk back to avoid splitting in the middle of a multi-byte char
         slice_ = remaining[:cut]
         while len(slice_.encode("utf-8")) > max_bytes and cut > 0:
             cut -= 128
             slice_ = remaining[:cut]
-        # Prefer newline boundary
         nl = slice_.rfind("\n")
         if nl > max_bytes // 2:
             cut = nl + 1
@@ -292,14 +290,8 @@ def _chunk_css(css: str, max_bytes: int = 30000) -> List[str]:
 
 
 def generate_css_block(css_content: str, app_id: int, workspace: str, version: str) -> str:
-    """Standalone PL/SQL block that imports the react_theme.css static file.
-
-    Handles PL/SQL 32K string-literal limit by splitting CSS into ≤30000-byte
-    chunks, converting each chunk to RAW, and appending into a BLOB via
-    dbms_lob.writeappend(). Final BLOB is passed to create_app_static_file.
-    """
     css = css_content if css_content else "/* react theme placeholder */"
-    chunks = _chunk_css(css, max_bytes=16000)  # Keep well below 32767 for safety
+    chunks = _chunk_css(css, max_bytes=16000)
 
     out = []
     out.append("declare")
@@ -327,7 +319,7 @@ def generate_css_block(css_content: str, app_id: int, workspace: str, version: s
 
 def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: str) -> Dict[str, Any]:
     ids = IdAllocator()
-    release, date = _release(version)
+    release, _ = _release(version)
 
     header = []
     header.append(f"-- Target APEX Version: {version} (release {release})")
@@ -340,29 +332,8 @@ def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: s
     header.append("")
 
     body = []
-    body.append("declare")
-    body.append("  l_region_tpl number;")
     body.append("begin")
     body.append(_emit_import_begin(workspace, app_id, version))
-    # Look up the existing Universal Theme "Standard" region template id from
-    # the target application. This avoids dangling wwv_flow_imp.id() references
-    # that crash WWV_FLOW_PLUGIN at render time with ORA-01403.
-    body.append("  begin")
-    body.append("    select template_id into l_region_tpl")
-    body.append("      from apex_application_temp_region")
-    body.append(f"     where application_id = {app_id}")
-    body.append("       and template_name = 'Standard'")
-    body.append("       and rownum = 1;")
-    body.append("  exception when no_data_found then")
-    body.append("    begin")
-    body.append("      select template_id into l_region_tpl")
-    body.append("        from apex_application_temp_region")
-    body.append(f"       where application_id = {app_id}")
-    body.append("         and rownum = 1;")
-    body.append("    exception when no_data_found then l_region_tpl := null;")
-    body.append("    end;")
-    body.append("  end;")
-    body.append("")
 
     page_summary: List[Dict[str, Any]] = []
     page_seq = 100
@@ -386,7 +357,6 @@ def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: s
     body.append("/")
     body.append("")
 
-    # CSS static file (separate standalone block)
     body.append("-- ============================================================")
     body.append("-- Static Application File: react_theme.css")
     body.append("-- ============================================================")
