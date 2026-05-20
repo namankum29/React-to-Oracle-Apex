@@ -265,10 +265,17 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
 
     # ------------------------------------------------------------------
     # Automatic Row Fetch  (Before Header pre-rendering process)
+    # Full auto-column mapping: SELECT col1, col2, ... INTO :P<n>_COL1, ...
     # ------------------------------------------------------------------
     table_name = _table_name_for(name)
     pk_field = _primary_key_field(fields)
     pk_item = f"P{page_id}_{pk_field.upper()}"
+    # Build column list from form fields (excluding PK on RHS of SELECT only
+    # for clarity — but include in both SELECT and INTO so the PK round-trips).
+    select_cols = [f.upper() for f in fields[:30]]
+    into_items = [f"P{page_id}_{c}" for c in select_cols]
+    select_csv = ", ".join(select_cols) or "1"
+    into_csv = ", ".join([f":{i}" for i in into_items]) or "null"
     arf_id = ids.next()
     out.append("wwv_flow_imp_page.create_page_process(")
     out.append(f" p_id=>wwv_flow_imp.id({arf_id})")
@@ -277,16 +284,51 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
     out.append(",p_process_type=>'NATIVE_PLSQL'")
     out.append(f",p_process_name=>'Fetch Row from {table_name}'")
     out.append(",p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(")
-    out.append(f"'-- Automatic Row Fetch: hydrate P{page_id}_* items from {table_name} when {pk_item} is set',")
-    out.append("'-- Replace this stub with actual SELECT INTO / apex_form.fetch_row after import.',")
     out.append("'begin',")
     out.append(f"'  if :{pk_item} is not null then',")
-    out.append("'    null; -- TODO: select <cols> into :P<n>_<cols> from " + table_name + " where ...',")
+    out.append("'    select " + select_csv + "',")
+    out.append("'    into   " + into_csv + "',")
+    out.append("'    from   " + table_name + "',")
+    out.append(f"'    where  {pk_field.upper()} = :{pk_item};',")
     out.append("'  end if;',")
+    out.append("'exception',")
+    out.append("'  when no_data_found then null;',")
     out.append("'end;'))")
     out.append(",p_process_clob_language=>'PLSQL'")
     out.append(",p_error_display_location=>'INLINE_IN_NOTIFICATION'")
+    out.append(f",p_process_when=>'{pk_item}'")
+    out.append(",p_process_when_type=>'ITEM_IS_NOT_NULL'")
     out.append(");")
+
+    # ------------------------------------------------------------------
+    # Session-state default-value initialization  (Before Header)
+    # Emits one create_page_computation per field with a non-empty default
+    # in React's emptyForm. Computation type=STATIC_ASSIGNMENT.
+    # ------------------------------------------------------------------
+    defaults: Dict[str, str] = comp.get("defaults") or {}
+    for field, value in defaults.items():
+        if field not in fields or value in ("", None):
+            continue
+        if field == pk_field:
+            continue
+        # Skip JS expressions — only allow primitive literal values
+        if any(tok in value for tok in ("(", ")", "=>", "${", "`", "[", "]", "function")):
+            continue
+        if len(value) > 60:
+            continue
+        comp_id = ids.next()
+        target_item = f"P{page_id}_{field.upper()}"
+        safe_val = _sanitize(str(value))
+        out.append("wwv_flow_imp_page.create_page_computation(")
+        out.append(f" p_id=>wwv_flow_imp.id({comp_id})")
+        out.append(f",p_computation_sequence=>30")
+        out.append(f",p_computation_item=>'{target_item}'")
+        out.append(",p_computation_point=>'BEFORE_HEADER'")
+        out.append(",p_computation_type=>'STATIC_ASSIGNMENT'")
+        out.append(f",p_computation=>'{safe_val}'")
+        out.append(f",p_compute_when=>'{target_item}'")
+        out.append(",p_compute_when_type=>'ITEM_IS_NULL'")
+        out.append(");")
 
     # ------------------------------------------------------------------
     # Required-field validations  (Not-null check on heuristic key fields)

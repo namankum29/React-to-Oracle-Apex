@@ -63,10 +63,13 @@ USE_STATE_OBJ_RE = re.compile(
     r"useState\s*\(\s*\{([^}]+)\}\s*\)", re.MULTILINE | re.DOTALL
 )
 EMPTY_FORM_RE = re.compile(
-    r"(?:emptyForm|formData|initialForm|defaultValues)\s*=\s*\{([^}]+)\}",
+    r"(?:emptyForm|formData|initialForm|defaultValues|initialState|emptyValues|emptyState|empty[A-Z]\w*)"
+    r"(?:\s*:\s*[A-Za-z_][A-Za-z0-9_<>\[\],\s]*)?"  # optional TS type annotation
+    r"\s*=\s*\{([^}]+)\}",
     re.MULTILINE | re.DOTALL,
 )
 KEY_NAME_RE = re.compile(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*:")
+KEY_VALUE_RE = re.compile(r"([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*([^,\n}]+)")
 CLASSNAME_RE = re.compile(r'className\s*=\s*["\']([^"\']+)["\']')
 COMPONENT_NAME_RE = re.compile(
     r"(?:export\s+default\s+(?:function|const)|function|const)\s+([A-Z][A-Za-z0-9_]+)"
@@ -76,6 +79,29 @@ MAP_RENDER_RE = re.compile(r"\.map\s*\(\s*\(?\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\)?\s*=
 RECHARTS_RE = re.compile(r"from\s+['\"]recharts['\"]")
 CHART_TAG_RE = re.compile(r"<(LineChart|BarChart|PieChart|AreaChart|RadarChart)\b")
 STAT_CARD_RE = re.compile(r"\b(stat|statistic|metric|kpi)s?\b", re.IGNORECASE)
+
+
+def extract_field_defaults(text: str) -> Dict[str, str]:
+    """Map fieldName -> default literal from emptyForm/formData/initialForm.
+
+    Only used as a deterministic source for APEX computations and session-state
+    item defaulting. Strings are stripped of surrounding quotes.
+    """
+    defaults: Dict[str, str] = {}
+    for m in EMPTY_FORM_RE.finditer(text):
+        body = m.group(1)
+        for km in KEY_VALUE_RE.finditer(body):
+            key = km.group(1)
+            val = km.group(2).strip()
+            # Strip trailing comma/whitespace artifacts
+            val = val.rstrip(",").strip()
+            # Unwrap simple string literals
+            if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                val = val[1:-1]
+            if val in ("true", "false", "null", "undefined"):
+                val = "" if val in ("null", "undefined") else val
+            defaults[key] = val
+    return defaults
 
 
 def extract_field_names(text: str) -> List[str]:
@@ -128,6 +154,7 @@ def parse_component(path: Path, root: Path) -> Dict[str, Any]:
     has_stat_cards = "<statcard" in text.lower() or "stat-card" in text.lower()
 
     fields = extract_field_names(text) if (has_form_tag or has_empty_form) else []
+    defaults = extract_field_defaults(text) if has_empty_form else {}
     classnames = extract_classnames(text)
 
     # Classification — name-based heuristics first, then content
@@ -152,6 +179,7 @@ def parse_component(path: Path, root: Path) -> Dict[str, Any]:
         "file": str(path.relative_to(root)),
         "type": page_type,
         "fields": fields,
+        "defaults": defaults,
         "classnames": classnames[:20],
         "has_chart": has_recharts,
         "has_table": has_table or has_map_render,
