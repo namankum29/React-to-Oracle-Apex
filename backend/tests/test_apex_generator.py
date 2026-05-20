@@ -103,10 +103,19 @@ def test_generate_success_242(zip_bytes):
     ]:
         assert token in sql, f"missing token: {token}"
 
-    # Must NOT contain the previously-broken plugin names
+    # Must NOT contain the previously-broken plugin names (NATIVE_SQL_REPORT
+    # is now intentionally used inside dashboards for KPI card regions, so it
+    # is allowed.)
     assert "NATIVE_HTML" not in sql, "regressed to NATIVE_HTML"
     assert "NATIVE_STATIC" not in sql, "regressed to NATIVE_STATIC"
-    assert "NATIVE_SQL_REPORT" not in sql, "regressed to NATIVE_SQL_REPORT"
+
+    # New: DML save process, ARF, validation, branch, JET chart
+    assert "NATIVE_FORM_DML" in sql, "missing DML process"
+    assert "BEFORE_HEADER" in sql, "missing pre-render ARF process"
+    assert "create_page_validation" in sql, "missing validation"
+    assert "create_page_branch" in sql, "missing branch"
+    assert "NATIVE_JET_CHART" in sql, "missing dashboard JET chart"
+    assert "create_jet_chart" in sql, "missing chart definition"
 
     # Page types detected
     types = {p["type"] for p in body["pages"]}

@@ -137,6 +137,36 @@ def _emit_import_end() -> str:
 #   FORM PAGE TEMPLATE  (cloned from real_form_page.sql)
 # =============================================================================
 
+def _table_name_for(component_name: str) -> str:
+    """Guess a source table name from a React component name.
+
+    Customers       -> CUSTOMERS
+    PurchaseOrders  -> PURCHASE_ORDERS
+    SalesOrders     -> SALES_ORDERS
+    """
+    s = re.sub(r"([a-z])([A-Z])", r"\1_\2", component_name or "")
+    return re.sub(r"[^A-Z0-9_]+", "_", s.upper()).strip("_")
+
+
+def _primary_key_field(fields: List[str]) -> str:
+    for f in fields:
+        if f.lower() in ("id", "uid", "code"):
+            return f
+        if f.lower().endswith("_id") or f.lower().endswith("id"):
+            return f
+    return "id"
+
+
+def _required_fields(fields: List[str]) -> List[str]:
+    """Heuristic: name/email/code-like fields are required."""
+    out = []
+    for f in fields:
+        fl = f.lower()
+        if any(k in fl for k in ("name", "email", "code", "title", "no")) and len(fl) <= 30:
+            out.append(f)
+    return out[:5]  # cap
+
+
 def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
     name = comp["name"]
     fields = comp.get("fields") or ["name", "email"]
@@ -232,6 +262,84 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
             out.append("  'trim_spaces', 'BOTH')).to_clob")
         out.append(");")
         seq += 10
+
+    # ------------------------------------------------------------------
+    # Automatic Row Fetch  (Before Header pre-rendering process)
+    # ------------------------------------------------------------------
+    table_name = _table_name_for(name)
+    pk_field = _primary_key_field(fields)
+    pk_item = f"P{page_id}_{pk_field.upper()}"
+    arf_id = ids.next()
+    out.append("wwv_flow_imp_page.create_page_process(")
+    out.append(f" p_id=>wwv_flow_imp.id({arf_id})")
+    out.append(",p_process_sequence=>10")
+    out.append(",p_process_point=>'BEFORE_HEADER'")
+    out.append(",p_process_type=>'NATIVE_PLSQL'")
+    out.append(f",p_process_name=>'Fetch Row from {table_name}'")
+    out.append(",p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(")
+    out.append(f"'-- Automatic Row Fetch: hydrate P{page_id}_* items from {table_name} when {pk_item} is set',")
+    out.append("'-- Replace this stub with actual SELECT INTO / apex_form.fetch_row after import.',")
+    out.append("'begin',")
+    out.append(f"'  if :{pk_item} is not null then',")
+    out.append("'    null; -- TODO: select <cols> into :P<n>_<cols> from " + table_name + " where ...',")
+    out.append("'  end if;',")
+    out.append("'end;'))")
+    out.append(",p_process_clob_language=>'PLSQL'")
+    out.append(",p_error_display_location=>'INLINE_IN_NOTIFICATION'")
+    out.append(");")
+
+    # ------------------------------------------------------------------
+    # Required-field validations  (Not-null check on heuristic key fields)
+    # ------------------------------------------------------------------
+    for req_field in _required_fields(fields):
+        val_id = ids.next()
+        req_item = f"P{page_id}_{req_field.upper()}"
+        out.append("wwv_flow_imp_page.create_page_validation(")
+        out.append(f" p_id=>wwv_flow_imp.id({val_id})")
+        out.append(f",p_validation_name=>'{_label(req_field)} Required'")
+        out.append(",p_validation_sequence=>10")
+        out.append(f",p_validation=>':{req_item} is not null'")
+        out.append(",p_validation_type=>'PLSQL_EXPRESSION'")
+        out.append(f",p_error_message=>'{_label(req_field)} is required.'")
+        out.append(f",p_associated_item=>wwv_flow_imp.id({arf_id})")
+        out.append(",p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'")
+        out.append(",p_always_execute=>'N'")
+        out.append(");")
+
+    # ------------------------------------------------------------------
+    # DML Save process  (Process Row of <TABLE>)
+    # ------------------------------------------------------------------
+    dml_id = ids.next()
+    out.append("wwv_flow_imp_page.create_page_process(")
+    out.append(f" p_id=>wwv_flow_imp.id({dml_id})")
+    out.append(",p_process_sequence=>20")
+    out.append(",p_process_point=>'AFTER_SUBMIT'")
+    out.append(",p_process_type=>'NATIVE_FORM_DML'")
+    out.append(f",p_process_name=>'Process Row of {table_name}'")
+    out.append(",p_attribute_02=>'TABLE'")
+    out.append(f",p_attribute_03=>'{table_name}'")
+    out.append(f",p_attribute_04=>'{pk_item}'")
+    out.append(f",p_attribute_05=>'{pk_field.upper()}'")
+    out.append(",p_attribute_06=>'EXISTING'")
+    out.append(",p_attribute_08=>'Y'")
+    out.append(f",p_process_when_button_id=>wwv_flow_imp.id({save_btn_id})")
+    out.append(",p_process_success_message=>'Row saved successfully.'")
+    out.append(",p_error_display_location=>'INLINE_IN_NOTIFICATION'")
+    out.append(");")
+
+    # ------------------------------------------------------------------
+    # Branch after submit  -> redirect back to self with cache reset
+    # ------------------------------------------------------------------
+    branch_id = ids.next()
+    out.append("wwv_flow_imp_page.create_page_branch(")
+    out.append(f" p_id=>wwv_flow_imp.id({branch_id})")
+    out.append(f",p_branch_name=>'After Submit Redirect'")
+    out.append(f",p_branch_action=>'f?p=&APP_ID.:{page_id}:&SESSION.::&DEBUG.:RP::&success_msg=#SUCCESS_MSG#'")
+    out.append(",p_branch_point=>'AFTER_PROCESSING'")
+    out.append(",p_branch_type=>'REDIRECT_URL'")
+    out.append(",p_branch_sequence=>10")
+    out.append(f",p_branch_when_button_id=>wwv_flow_imp.id({save_btn_id})")
+    out.append(");")
 
     out.append("end;")
     out.append("/")
@@ -405,11 +513,187 @@ def generate_ir_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> st
     return "\n".join(out)
 
 
-# Dashboard pages reuse the IR template (stat-card style dashboards weren't
-# given a reference export, so we generate a single summary IR page).
+# =============================================================================
+#   DASHBOARD PAGE TEMPLATE  (cloned from f107_page_5.1.sql)
+#   Layout: 4 stat-cards (Classic Report) + 1 JET line chart + 1 JET bar chart
+# =============================================================================
+
 def generate_dashboard_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
-    comp = {**comp, "fields": comp.get("fields") or ["metric", "value", "trend", "as_of_date"]}
-    return generate_ir_page(ids, page_id, comp)
+    name = comp["name"]
+    page_name = _label(name)
+    page_alias = _alias(name)
+
+    out = []
+    out.append(f"prompt --application/pages/page_{page_id:05d}")
+    out.append("begin")
+    out.append("wwv_flow_imp_page.create_page(")
+    out.append(f" p_id=>{page_id}")
+    out.append(f",p_name=>'{_sanitize(page_name)}'")
+    out.append(f",p_alias=>'{page_alias}'")
+    out.append(f",p_step_title=>'{_sanitize(page_name)}'")
+    out.append(",p_autocomplete_on_off=>'OFF'")
+    out.append(",p_page_template_options=>'#DEFAULT#'")
+    out.append(",p_protection_level=>'C'")
+    out.append(",p_page_component_map=>'18'")
+    out.append(");")
+
+    # ---- 4 KPI cards (as Classic Report rows in a row container) ----
+    cards_plug = ids.next()
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({cards_plug})")
+    out.append(",p_plug_name=>'KPI Cards'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>10")
+    out.append(",p_query_type=>'SQL'")
+    out.append(",p_plug_source=>'select ''Total'' as label, 1024 as value, ''#28a745'' as color from dual "
+                "union all select ''Active'', 312, ''#0d6efd'' from dual "
+                "union all select ''Pending'', 47, ''#ffc107'' from dual "
+                "union all select ''Completed'', 665, ''#6c757d'' from dual'")
+    out.append(",p_plug_source_type=>'NATIVE_SQL_REPORT'")
+    out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
+    out.append("  'pagination_type', 'NONE',")
+    out.append("  'show_null_values_as', '-',")
+    out.append("  'strip_html', 'N')).to_clob")
+    out.append(");")
+
+    # ---- JET line chart: trend over time ----
+    line_chart_plug = ids.next()
+    line_chart_id = ids.next()
+    line_series_id = ids.next()
+    line_xaxis_id = ids.next()
+    line_yaxis_id = ids.next()
+    line_sql = (
+        "select to_char(sysdate - level + 1, 'YYYY-MM-DD') as day, "
+        "round(dbms_random.value(50, 200)) as value "
+        "from dual connect by level <= 14 order by 1"
+    )
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({line_chart_plug})")
+    out.append(",p_plug_name=>'Trend'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>20")
+    out.append(",p_plug_source_type=>'NATIVE_JET_CHART'")
+    out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
+    out.append("  'animation_on_data_change', 'auto',")
+    out.append("  'animation_on_display', 'auto')).to_clob")
+    out.append(");")
+    # JET chart definition
+    out.append("wwv_flow_imp_page.create_jet_chart(")
+    out.append(f" p_id=>wwv_flow_imp.id({line_chart_id})")
+    out.append(f",p_region_id=>wwv_flow_imp.id({line_chart_plug})")
+    out.append(",p_chart_type=>'line'")
+    out.append(",p_animation_on_display=>'auto'")
+    out.append(",p_animation_on_data_change=>'auto'")
+    out.append(",p_show_toolbar=>'N'")
+    out.append(",p_hover_behavior=>'dim'")
+    out.append(",p_zoom_and_scroll=>'off'")
+    out.append(");")
+    # Y axis
+    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
+    out.append(f" p_id=>wwv_flow_imp.id({line_yaxis_id})")
+    out.append(f",p_chart_id=>wwv_flow_imp.id({line_chart_id})")
+    out.append(",p_axis=>'y'")
+    out.append(",p_is_rendered=>'on'")
+    out.append(",p_format_scaling=>'auto'")
+    out.append(",p_scaling=>'linear'")
+    out.append(",p_baseline_scaling=>'zero'")
+    out.append(",p_position=>'auto'")
+    out.append(");")
+    # X axis
+    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
+    out.append(f" p_id=>wwv_flow_imp.id({line_xaxis_id})")
+    out.append(f",p_chart_id=>wwv_flow_imp.id({line_chart_id})")
+    out.append(",p_axis=>'x'")
+    out.append(",p_is_rendered=>'on'")
+    out.append(",p_format_scaling=>'auto'")
+    out.append(",p_scaling=>'linear'")
+    out.append(",p_baseline_scaling=>'zero'")
+    out.append(",p_major_tick_rendered=>'on'")
+    out.append(",p_minor_tick_rendered=>'off'")
+    out.append(",p_position=>'auto'")
+    out.append(");")
+    # Series
+    out.append("wwv_flow_imp_page.create_jet_chart_series(")
+    out.append(f" p_id=>wwv_flow_imp.id({line_series_id})")
+    out.append(f",p_chart_id=>wwv_flow_imp.id({line_chart_id})")
+    out.append(",p_seq=>10")
+    out.append(",p_name=>'Value'")
+    out.append(",p_query_type=>'SQL'")
+    out.append(f",p_query_source=>'{line_sql}'")
+    out.append(",p_items_value_column_name=>'VALUE'")
+    out.append(",p_items_label_column_name=>'DAY'")
+    out.append(");")
+
+    # ---- JET bar chart: distribution ----
+    bar_plug = ids.next()
+    bar_chart_id = ids.next()
+    bar_series_id = ids.next()
+    bar_xaxis_id = ids.next()
+    bar_yaxis_id = ids.next()
+    bar_sql = (
+        "select category, value from ("
+        "select 'A' as category, 24 as value from dual "
+        "union all select 'B', 38 from dual "
+        "union all select 'C', 17 from dual "
+        "union all select 'D', 52 from dual "
+        "union all select 'E', 31 from dual)"
+    )
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({bar_plug})")
+    out.append(",p_plug_name=>'By Category'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>30")
+    out.append(",p_plug_source_type=>'NATIVE_JET_CHART'")
+    out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
+    out.append("  'animation_on_data_change', 'auto',")
+    out.append("  'animation_on_display', 'auto')).to_clob")
+    out.append(");")
+    out.append("wwv_flow_imp_page.create_jet_chart(")
+    out.append(f" p_id=>wwv_flow_imp.id({bar_chart_id})")
+    out.append(f",p_region_id=>wwv_flow_imp.id({bar_plug})")
+    out.append(",p_chart_type=>'bar'")
+    out.append(",p_animation_on_display=>'auto'")
+    out.append(",p_animation_on_data_change=>'auto'")
+    out.append(",p_show_toolbar=>'N'")
+    out.append(",p_hover_behavior=>'dim'")
+    out.append(",p_orientation=>'vertical'")
+    out.append(");")
+    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
+    out.append(f" p_id=>wwv_flow_imp.id({bar_yaxis_id})")
+    out.append(f",p_chart_id=>wwv_flow_imp.id({bar_chart_id})")
+    out.append(",p_axis=>'y'")
+    out.append(",p_is_rendered=>'on'")
+    out.append(",p_format_scaling=>'auto'")
+    out.append(",p_scaling=>'linear'")
+    out.append(",p_baseline_scaling=>'zero'")
+    out.append(",p_position=>'auto'")
+    out.append(");")
+    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
+    out.append(f" p_id=>wwv_flow_imp.id({bar_xaxis_id})")
+    out.append(f",p_chart_id=>wwv_flow_imp.id({bar_chart_id})")
+    out.append(",p_axis=>'x'")
+    out.append(",p_is_rendered=>'on'")
+    out.append(",p_format_scaling=>'auto'")
+    out.append(",p_scaling=>'linear'")
+    out.append(",p_position=>'auto'")
+    out.append(");")
+    out.append("wwv_flow_imp_page.create_jet_chart_series(")
+    out.append(f" p_id=>wwv_flow_imp.id({bar_series_id})")
+    out.append(f",p_chart_id=>wwv_flow_imp.id({bar_chart_id})")
+    out.append(",p_seq=>10")
+    out.append(",p_name=>'Count'")
+    out.append(",p_query_type=>'SQL'")
+    out.append(f",p_query_source=>'{bar_sql}'")
+    out.append(",p_items_value_column_name=>'VALUE'")
+    out.append(",p_items_label_column_name=>'CATEGORY'")
+    out.append(");")
+
+    out.append("end;")
+    out.append("/")
+    return "\n".join(out)
 
 
 # =============================================================================
