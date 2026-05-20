@@ -80,37 +80,40 @@ def test_generate_success_242(zip_bytes):
     assert body["app_id"] == 205247
 
     sql = body["sql"]
-    # PL/SQL core constructs (wwv_flow_imp_* API used by APEX 22.2+)
+    # PL/SQL core constructs cloned from real APEX 24.2 page exports
     for token in [
         "wwv_flow_imp.import_begin",
         "wwv_flow_imp.import_end",
         "wwv_flow_imp_page.create_page",
         "wwv_flow_imp_page.create_page_plug",
         "wwv_flow_imp_page.create_page_button",
-        "wwv_flow_imp_page.create_page_process",
+        "wwv_flow_imp_page.create_page_item",
+        "wwv_flow_imp_page.create_worksheet",
+        "wwv_flow_imp_page.create_worksheet_column",
+        "wwv_flow_imp_page.create_worksheet_rpt",
         "wwv_flow_imp_shared.create_app_static_file",
         "apex_util.find_security_group_id",
+        "wwv_flow_imp.id(",
+        "wwv_flow_t_plugin_attributes",
+        "p_protection_level=>'C'",
+        "p_page_component_map=>",
+        "NATIVE_IR",
         "WKSP_NSTS",
         "205247",
     ]:
         assert token in sql, f"missing token: {token}"
 
-    # form detection -> page_item + floatingLabel for 24.2
-    assert "wwv_flow_imp_page.create_page_item" in sql
-    assert "floatingLabel" in sql
-
-    # report detection -> NATIVE_IR
-    assert "NATIVE_IR" in sql
-
-    # dashboard -> stat cards as NATIVE_STATIC + trend as NATIVE_IR
-    assert "NATIVE_STATIC" in sql
+    # Must NOT contain the previously-broken plugin names
+    assert "NATIVE_HTML" not in sql, "regressed to NATIVE_HTML"
+    assert "NATIVE_STATIC" not in sql, "regressed to NATIVE_STATIC"
+    assert "NATIVE_SQL_REPORT" not in sql, "regressed to NATIVE_SQL_REPORT"
 
     # Page types detected
     types = {p["type"] for p in body["pages"]}
     assert {"form", "report", "dashboard"}.issubset(types), f"types={types}"
 
 
-# ----- lower APEX version still gets floatingLabel (22.2 is supported) -----
+# ----- lower APEX version still works -----
 def test_generate_version_22_2(zip_bytes):
     files = {"file": ("sample.zip", zip_bytes, "application/zip")}
     data = {"workspace": "WKSP_T", "app_id": "100", "apex_version": "22.2"}
@@ -118,7 +121,7 @@ def test_generate_version_22_2(zip_bytes):
     assert r.status_code == 200
     sql = r.json()["sql"]
     assert "Target APEX Version: 22.2" in sql
-    assert "floatingLabel" in sql
+    assert "wwv_flow_imp_page.create_page" in sql
 
 
 # ----- reject non-zip -----
