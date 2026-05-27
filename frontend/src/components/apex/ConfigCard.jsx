@@ -74,6 +74,34 @@ export default function ConfigCard({
               <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
+
+          <div className="mt-5">
+  <label className="flex items-center justify-between cursor-pointer">
+    <div>
+      <p className="text-sm text-white font-medium">
+        Run React Build
+      </p>
+
+      <p className="text-xs text-slate-500 mt-1">
+        Executes npm install + npm run build before parsing
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={() => onRunBuild(!runBuild)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+        runBuild ? "bg-blue-600" : "bg-slate-700"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+          runBuild ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
+  </label>
+</div>
         </div>
 
         <div className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl">

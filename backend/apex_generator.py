@@ -19,6 +19,75 @@ import time
 from typing import Dict, List, Any
 
 
+REACT_NATIVE_CSS = """
+.t-Body-content {
+  background:#f8fafc!important;
+}
+
+.t-Region {
+  border-radius:16px!important;
+  border:1px solid #e2e8f0!important;
+  box-shadow:0 8px 24px rgba(15,23,42,.08)!important;
+  overflow:hidden!important;
+}
+
+.t-Region-header {
+  background:#fff!important;
+  border-bottom:1px solid #e2e8f0!important;
+}
+
+.t-Region-title {
+  font-size:20px!important;
+  font-weight:700!important;
+  color:#1e293b!important;
+}
+
+.t-Button--hot,
+.t-Button.is-hot {
+  background:#0284c7!important;
+  border-color:#0284c7!important;
+  border-radius:10px!important;
+  font-weight:600!important;
+}
+
+.a-IRR-table th {
+  background:#f8fafc!important;
+  color:#64748b!important;
+  font-size:12px!important;
+  text-transform:uppercase!important;
+}
+
+.a-IRR-table td {
+  padding:14px 12px!important;
+}
+
+.t-Form-fieldContainer {
+  margin-bottom:18px!important;
+}
+
+.apex-item-text,
+.apex-item-number,
+.apex-item-textarea,
+select,
+textarea {
+  width:100%!important;
+  min-height:46px!important;
+  border-radius:10px!important;
+  border:1px solid #cbd5e1!important;
+  padding:8px 12px!important;
+  box-shadow:none!important;
+}
+
+.apex-item-text:focus,
+.apex-item-number:focus,
+.apex-item-textarea:focus,
+select:focus,
+textarea:focus {
+  border-color:#0284c7!important;
+  outline:none!important;
+}
+"""
+
 # Reference IDs harvested from /app/backend/templates/real_*_page.sql exports.
 # These belong to APEX 24.2 Universal Theme. If your workspace uses different
 # template IDs, override them here.
@@ -191,11 +260,10 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
     out.append(",p_page_component_map=>'17'")
     out.append(");")
 
-    # Form region — empty container (matches real export exactly: no source_type)
     out.append("wwv_flow_imp_page.create_page_plug(")
     out.append(f" p_id=>wwv_flow_imp.id({plug_id})")
     out.append(f",p_plug_name=>'{_sanitize(page_name)}'")
-    out.append(",p_region_template_options=>'#DEFAULT#:t-Region--scrollBody'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
     out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
     out.append(",p_plug_display_sequence=>10")
     out.append(",p_location=>null")
@@ -204,39 +272,36 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
     out.append("  'output_as', 'HTML')).to_clob")
     out.append(");")
 
-    # Save button
     out.append("wwv_flow_imp_page.create_page_button(")
     out.append(f" p_id=>wwv_flow_imp.id({save_btn_id})")
     out.append(",p_button_sequence=>40")
     out.append(f",p_button_plug_id=>wwv_flow_imp.id({plug_id})")
-    out.append(",p_button_name=>'Save'")
+    out.append(",p_button_name=>'SAVE'")
     out.append(",p_button_action=>'SUBMIT'")
-    out.append(",p_button_template_options=>'#DEFAULT#:t-Button--iconLeft'")
+    out.append(",p_button_template_options=>'#DEFAULT#:t-Button--hot'")
     out.append(f",p_button_template_id=>{WORKSPACE_TEMPLATE_IDS['BUTTON_TEMPLATE']}")
     out.append(",p_button_is_hot=>'Y'")
     out.append(",p_button_image_alt=>'Save'")
     out.append(",p_button_position=>'EDIT'")
     out.append(");")
 
-    # Cancel button
     out.append("wwv_flow_imp_page.create_page_button(")
     out.append(f" p_id=>wwv_flow_imp.id({cancel_btn_id})")
     out.append(",p_button_sequence=>50")
     out.append(f",p_button_plug_id=>wwv_flow_imp.id({plug_id})")
-    out.append(",p_button_name=>'cancel'")
+    out.append(",p_button_name=>'CANCEL'")
     out.append(",p_button_action=>'REDIRECT_PAGE'")
-    out.append(",p_button_template_options=>'#DEFAULT#:t-Button--iconLeft'")
+    out.append(",p_button_template_options=>'#DEFAULT#'")
     out.append(f",p_button_template_id=>{WORKSPACE_TEMPLATE_IDS['BUTTON_TEMPLATE']}")
-    out.append(",p_button_is_hot=>'Y'")
     out.append(",p_button_image_alt=>'Cancel'")
     out.append(",p_button_position=>'EDIT'")
     out.append(");")
 
-    # Items
     seq = 10
-    for i, field in enumerate(fields[:30]):
+    for field in fields[:30]:
         item_id = ids.next()
         display_as = _item_display_as(field)
+
         out.append("wwv_flow_imp_page.create_page_item(")
         out.append(f" p_id=>wwv_flow_imp.id({item_id})")
         out.append(f",p_name=>'P{page_id}_{field.upper()}'")
@@ -244,12 +309,10 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
         out.append(f",p_item_plug_id=>wwv_flow_imp.id({plug_id})")
         out.append(f",p_prompt=>'{_sanitize(_label(field))}'")
         out.append(f",p_display_as=>'{display_as}'")
-        out.append(",p_cSize=>30")
-        if i > 0:
-            out.append(",p_begin_on_new_line=>'N'")
+        out.append(",p_cSize=>100")
         out.append(f",p_field_template=>{WORKSPACE_TEMPLATE_IDS['FIELD_TEMPLATE']}")
-        out.append(",p_item_template_options=>'#DEFAULT#'")
-        # Attributes block matches real export exactly
+        out.append(",p_item_template_options=>'#DEFAULT#:margin-bottom-md'")
+
         if display_as == "NATIVE_NUMBER_FIELD":
             out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
             out.append("  'number_alignment', 'left',")
@@ -260,22 +323,20 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
             out.append("  'submit_when_enter_pressed', 'N',")
             out.append("  'subtype', 'TEXT',")
             out.append("  'trim_spaces', 'BOTH')).to_clob")
+
         out.append(");")
         seq += 10
 
-    # ------------------------------------------------------------------
-    # Automatic Row Fetch  (Before Header pre-rendering process)
-    # Full auto-column mapping: SELECT col1, col2, ... INTO :P<n>_COL1, ...
-    # ------------------------------------------------------------------
     table_name = _table_name_for(name)
     pk_field = _primary_key_field(fields)
     pk_item = f"P{page_id}_{pk_field.upper()}"
-    # Build column list from form fields (excluding PK on RHS of SELECT only
-    # for clarity — but include in both SELECT and INTO so the PK round-trips).
+
     select_cols = [f.upper() for f in fields[:30]]
     into_items = [f"P{page_id}_{c}" for c in select_cols]
+
     select_csv = ", ".join(select_cols) or "1"
     into_csv = ", ".join([f":{i}" for i in into_items]) or "null"
+
     arf_id = ids.next()
     out.append("wwv_flow_imp_page.create_page_process(")
     out.append(f" p_id=>wwv_flow_imp.id({arf_id})")
@@ -286,9 +347,9 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
     out.append(",p_process_sql_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(")
     out.append("'begin',")
     out.append(f"'  if :{pk_item} is not null then',")
-    out.append("'    select " + select_csv + "',")
-    out.append("'    into   " + into_csv + "',")
-    out.append("'    from   " + table_name + "',")
+    out.append(f"'    select {select_csv}',")
+    out.append(f"'    into   {into_csv}',")
+    out.append(f"'    from   {table_name}',")
     out.append(f"'    where  {pk_field.upper()} = :{pk_item};',")
     out.append("'  end if;',")
     out.append("'exception',")
@@ -300,28 +361,28 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
     out.append(",p_process_when_type=>'ITEM_IS_NOT_NULL'")
     out.append(");")
 
-    # ------------------------------------------------------------------
-    # Session-state default-value initialization  (Before Header)
-    # Emits one create_page_computation per field with a non-empty default
-    # in React's emptyForm. Computation type=STATIC_ASSIGNMENT.
-    # ------------------------------------------------------------------
     defaults: Dict[str, str] = comp.get("defaults") or {}
+
     for field, value in defaults.items():
         if field not in fields or value in ("", None):
             continue
+
         if field == pk_field:
             continue
-        # Skip JS expressions — only allow primitive literal values
-        if any(tok in value for tok in ("(", ")", "=>", "${", "`", "[", "]", "function")):
+
+        if any(tok in str(value) for tok in ("(", ")", "=>", "${", "`", "[", "]", "function")):
             continue
-        if len(value) > 60:
+
+        if len(str(value)) > 60:
             continue
+
         comp_id = ids.next()
         target_item = f"P{page_id}_{field.upper()}"
         safe_val = _sanitize(str(value))
+
         out.append("wwv_flow_imp_page.create_page_computation(")
         out.append(f" p_id=>wwv_flow_imp.id({comp_id})")
-        out.append(f",p_computation_sequence=>30")
+        out.append(",p_computation_sequence=>30")
         out.append(f",p_computation_item=>'{target_item}'")
         out.append(",p_computation_point=>'BEFORE_HEADER'")
         out.append(",p_computation_type=>'STATIC_ASSIGNMENT'")
@@ -330,12 +391,10 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
         out.append(",p_compute_when_type=>'ITEM_IS_NULL'")
         out.append(");")
 
-    # ------------------------------------------------------------------
-    # Required-field validations  (Not-null check on heuristic key fields)
-    # ------------------------------------------------------------------
     for req_field in _required_fields(fields):
         val_id = ids.next()
         req_item = f"P{page_id}_{req_field.upper()}"
+
         out.append("wwv_flow_imp_page.create_page_validation(")
         out.append(f" p_id=>wwv_flow_imp.id({val_id})")
         out.append(f",p_validation_name=>'{_label(req_field)} Required'")
@@ -343,14 +402,10 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
         out.append(f",p_validation=>':{req_item} is not null'")
         out.append(",p_validation_type=>'PLSQL_EXPRESSION'")
         out.append(f",p_error_message=>'{_label(req_field)} is required.'")
-        out.append(f",p_associated_item=>wwv_flow_imp.id({arf_id})")
         out.append(",p_error_display_location=>'INLINE_WITH_FIELD_AND_NOTIFICATION'")
         out.append(",p_always_execute=>'N'")
         out.append(");")
 
-    # ------------------------------------------------------------------
-    # DML Save process  (Process Row of <TABLE>)
-    # ------------------------------------------------------------------
     dml_id = ids.next()
     out.append("wwv_flow_imp_page.create_page_process(")
     out.append(f" p_id=>wwv_flow_imp.id({dml_id})")
@@ -369,13 +424,10 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
     out.append(",p_error_display_location=>'INLINE_IN_NOTIFICATION'")
     out.append(");")
 
-    # ------------------------------------------------------------------
-    # Branch after submit  -> redirect back to self with cache reset
-    # ------------------------------------------------------------------
     branch_id = ids.next()
     out.append("wwv_flow_imp_page.create_page_branch(")
     out.append(f" p_id=>wwv_flow_imp.id({branch_id})")
-    out.append(f",p_branch_name=>'After Submit Redirect'")
+    out.append(",p_branch_name=>'After Submit Redirect'")
     out.append(f",p_branch_action=>'f?p=&APP_ID.:{page_id}:&SESSION.::&DEBUG.:RP::&success_msg=#SUCCESS_MSG#'")
     out.append(",p_branch_point=>'AFTER_PROCESSING'")
     out.append(",p_branch_type=>'REDIRECT_URL'")
@@ -386,8 +438,6 @@ def generate_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> 
     out.append("end;")
     out.append("/")
     return "\n".join(out)
-
-
 # =============================================================================
 #   INTERACTIVE REPORT PAGE TEMPLATE  (cloned from real_ir_page.sql)
 # =============================================================================
@@ -560,181 +610,138 @@ def generate_ir_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> st
 #   Layout: 4 stat-cards (Classic Report) + 1 JET line chart + 1 JET bar chart
 # =============================================================================
 
+# def generate_dashboard_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
+
+#     name = comp["name"]
+#     page_name = _label(name)
+#     page_alias = _alias(name)
+
+#     plug_id = ids.next()
+
+#     html = f"""
+# <div class="rt-shell">
+
+# <div class="rt-header">
+#   <div>
+#     <h1 class="rt-title">{page_name}</h1>
+#     <div class="rt-subtitle">
+#       Dashboard Overview
+#     </div>
+#   </div>
+# </div>
+
+# <div class="rt-grid">
+#   <div class="rt-card">
+#     <div class="rt-card-label">Total Orders</div>
+#     <div class="rt-card-value">248</div>
+#   </div>
+
+#   <div class="rt-card">
+#     <div class="rt-card-label">Revenue</div>
+#     <div class="rt-card-value">$84K</div>
+#   </div>
+
+#   <div class="rt-card">
+#     <div class="rt-card-label">Pending</div>
+#     <div class="rt-card-value">18</div>
+#   </div>
+
+#   <div class="rt-card">
+#     <div class="rt-card-label">Completed</div>
+#     <div class="rt-card-value">165</div>
+#   </div>
+# </div>
+
+# </div>
+# """
+
+#     out = []
+
+#     out.append(f"prompt --application/pages/page_{page_id:05d}")
+
+#     out.append("begin")
+
+#     out.append("wwv_flow_imp_page.create_page(")
+#     out.append(f" p_id=>{page_id}")
+#     out.append(f",p_name=>'{_sanitize(page_name)}'")
+#     out.append(f",p_alias=>'{page_alias}'")
+#     out.append(f",p_step_title=>'{_sanitize(page_name)}'")
+#     out.append(",p_page_template_options=>'#DEFAULT#'")
+#     # out.append(",p_css_classes=>'rt-page'")
+#     out.append(");")
+
+#     out.append("wwv_flow_imp_page.create_page_plug(")
+#     out.append(f" p_id=>wwv_flow_imp.id({plug_id})")
+#     out.append(",p_plug_display_sequence=>10")
+#     out.append(f",p_plug_name=>'{_sanitize(page_name)}'")
+#     out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+#     # out.append(f",p_plug_source=>q'~{html}~'")
+#     out.append(f",p_plug_source=>q'!{html}!'")
+#     out.append(");")
+
+#     out.append("end;")
+#     out.append("/")
+
+#     # return '\\n'.join(out)
+#     return "\n".join(out)
+
+
 def generate_dashboard_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
+
     name = comp["name"]
     page_name = _label(name)
     page_alias = _alias(name)
 
+    plug_id = ids.next()
+
+    dashboard_html = (
+        '<div class="rt-shell">'
+        '<div class="rt-header">'
+        '<div>'
+        f'<h1 class="rt-title">{_sanitize(page_name)}</h1>'
+        '<div class="rt-subtitle">Dashboard Overview</div>'
+        '</div>'
+        '</div>'
+        '<div class="rt-grid">'
+        '<div class="rt-card"><div class="rt-card-label">Total Orders</div><div class="rt-card-value">248</div></div>'
+        '<div class="rt-card"><div class="rt-card-label">Revenue</div><div class="rt-card-value">$84K</div></div>'
+        '<div class="rt-card"><div class="rt-card-label">Pending</div><div class="rt-card-value">18</div></div>'
+        '<div class="rt-card"><div class="rt-card-label">Completed</div><div class="rt-card-value">165</div></div>'
+        '</div>'
+        '</div>'
+    )
+
     out = []
     out.append(f"prompt --application/pages/page_{page_id:05d}")
     out.append("begin")
+
     out.append("wwv_flow_imp_page.create_page(")
     out.append(f" p_id=>{page_id}")
     out.append(f",p_name=>'{_sanitize(page_name)}'")
     out.append(f",p_alias=>'{page_alias}'")
     out.append(f",p_step_title=>'{_sanitize(page_name)}'")
-    out.append(",p_autocomplete_on_off=>'OFF'")
     out.append(",p_page_template_options=>'#DEFAULT#'")
+    out.append(",p_autocomplete_on_off=>'OFF'")
     out.append(",p_protection_level=>'C'")
     out.append(",p_page_component_map=>'18'")
     out.append(");")
 
-    # ---- 4 KPI cards (as Classic Report rows in a row container) ----
-    cards_plug = ids.next()
     out.append("wwv_flow_imp_page.create_page_plug(")
-    out.append(f" p_id=>wwv_flow_imp.id({cards_plug})")
-    out.append(",p_plug_name=>'KPI Cards'")
+    out.append(f" p_id=>wwv_flow_imp.id({plug_id})")
+    out.append(f",p_plug_name=>'{_sanitize(page_name)}'")
     out.append(",p_region_template_options=>'#DEFAULT#'")
     out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
     out.append(",p_plug_display_sequence=>10")
-    out.append(",p_query_type=>'SQL'")
-    out.append(",p_plug_source=>'select ''Total'' as label, 1024 as value, ''#28a745'' as color from dual "
-                "union all select ''Active'', 312, ''#0d6efd'' from dual "
-                "union all select ''Pending'', 47, ''#ffc107'' from dual "
-                "union all select ''Completed'', 665, ''#6c757d'' from dual'")
-    out.append(",p_plug_source_type=>'NATIVE_SQL_REPORT'")
+    out.append(",p_location=>null")
+    out.append(f",p_plug_source=>q'~{dashboard_html}~'")
     out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
-    out.append("  'pagination_type', 'NONE',")
-    out.append("  'show_null_values_as', '-',")
-    out.append("  'strip_html', 'N')).to_clob")
-    out.append(");")
-
-    # ---- JET line chart: trend over time ----
-    line_chart_plug = ids.next()
-    line_chart_id = ids.next()
-    line_series_id = ids.next()
-    line_xaxis_id = ids.next()
-    line_yaxis_id = ids.next()
-    line_sql = (
-        "select to_char(sysdate - level + 1, 'YYYY-MM-DD') as day, "
-        "round(dbms_random.value(50, 200)) as value "
-        "from dual connect by level <= 14 order by 1"
-    )
-    out.append("wwv_flow_imp_page.create_page_plug(")
-    out.append(f" p_id=>wwv_flow_imp.id({line_chart_plug})")
-    out.append(",p_plug_name=>'Trend'")
-    out.append(",p_region_template_options=>'#DEFAULT#'")
-    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
-    out.append(",p_plug_display_sequence=>20")
-    out.append(",p_plug_source_type=>'NATIVE_JET_CHART'")
-    out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
-    out.append("  'animation_on_data_change', 'auto',")
-    out.append("  'animation_on_display', 'auto')).to_clob")
-    out.append(");")
-    # JET chart definition
-    out.append("wwv_flow_imp_page.create_jet_chart(")
-    out.append(f" p_id=>wwv_flow_imp.id({line_chart_id})")
-    out.append(f",p_region_id=>wwv_flow_imp.id({line_chart_plug})")
-    out.append(",p_chart_type=>'line'")
-    out.append(",p_animation_on_display=>'auto'")
-    out.append(",p_animation_on_data_change=>'auto'")
-    out.append(",p_show_toolbar=>'N'")
-    out.append(",p_hover_behavior=>'dim'")
-    out.append(",p_zoom_and_scroll=>'off'")
-    out.append(");")
-    # Y axis
-    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
-    out.append(f" p_id=>wwv_flow_imp.id({line_yaxis_id})")
-    out.append(f",p_chart_id=>wwv_flow_imp.id({line_chart_id})")
-    out.append(",p_axis=>'y'")
-    out.append(",p_is_rendered=>'on'")
-    out.append(",p_format_scaling=>'auto'")
-    out.append(",p_scaling=>'linear'")
-    out.append(",p_baseline_scaling=>'zero'")
-    out.append(",p_position=>'auto'")
-    out.append(");")
-    # X axis
-    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
-    out.append(f" p_id=>wwv_flow_imp.id({line_xaxis_id})")
-    out.append(f",p_chart_id=>wwv_flow_imp.id({line_chart_id})")
-    out.append(",p_axis=>'x'")
-    out.append(",p_is_rendered=>'on'")
-    out.append(",p_format_scaling=>'auto'")
-    out.append(",p_scaling=>'linear'")
-    out.append(",p_baseline_scaling=>'zero'")
-    out.append(",p_major_tick_rendered=>'on'")
-    out.append(",p_minor_tick_rendered=>'off'")
-    out.append(",p_position=>'auto'")
-    out.append(");")
-    # Series
-    out.append("wwv_flow_imp_page.create_jet_chart_series(")
-    out.append(f" p_id=>wwv_flow_imp.id({line_series_id})")
-    out.append(f",p_chart_id=>wwv_flow_imp.id({line_chart_id})")
-    out.append(",p_seq=>10")
-    out.append(",p_name=>'Value'")
-    out.append(",p_query_type=>'SQL'")
-    out.append(f",p_query_source=>'{line_sql}'")
-    out.append(",p_items_value_column_name=>'VALUE'")
-    out.append(",p_items_label_column_name=>'DAY'")
-    out.append(");")
-
-    # ---- JET bar chart: distribution ----
-    bar_plug = ids.next()
-    bar_chart_id = ids.next()
-    bar_series_id = ids.next()
-    bar_xaxis_id = ids.next()
-    bar_yaxis_id = ids.next()
-    bar_sql = (
-        "select category, value from ("
-        "select 'A' as category, 24 as value from dual "
-        "union all select 'B', 38 from dual "
-        "union all select 'C', 17 from dual "
-        "union all select 'D', 52 from dual "
-        "union all select 'E', 31 from dual)"
-    )
-    out.append("wwv_flow_imp_page.create_page_plug(")
-    out.append(f" p_id=>wwv_flow_imp.id({bar_plug})")
-    out.append(",p_plug_name=>'By Category'")
-    out.append(",p_region_template_options=>'#DEFAULT#'")
-    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
-    out.append(",p_plug_display_sequence=>30")
-    out.append(",p_plug_source_type=>'NATIVE_JET_CHART'")
-    out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
-    out.append("  'animation_on_data_change', 'auto',")
-    out.append("  'animation_on_display', 'auto')).to_clob")
-    out.append(");")
-    out.append("wwv_flow_imp_page.create_jet_chart(")
-    out.append(f" p_id=>wwv_flow_imp.id({bar_chart_id})")
-    out.append(f",p_region_id=>wwv_flow_imp.id({bar_plug})")
-    out.append(",p_chart_type=>'bar'")
-    out.append(",p_animation_on_display=>'auto'")
-    out.append(",p_animation_on_data_change=>'auto'")
-    out.append(",p_show_toolbar=>'N'")
-    out.append(",p_hover_behavior=>'dim'")
-    out.append(",p_orientation=>'vertical'")
-    out.append(");")
-    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
-    out.append(f" p_id=>wwv_flow_imp.id({bar_yaxis_id})")
-    out.append(f",p_chart_id=>wwv_flow_imp.id({bar_chart_id})")
-    out.append(",p_axis=>'y'")
-    out.append(",p_is_rendered=>'on'")
-    out.append(",p_format_scaling=>'auto'")
-    out.append(",p_scaling=>'linear'")
-    out.append(",p_baseline_scaling=>'zero'")
-    out.append(",p_position=>'auto'")
-    out.append(");")
-    out.append("wwv_flow_imp_page.create_jet_chart_axis(")
-    out.append(f" p_id=>wwv_flow_imp.id({bar_xaxis_id})")
-    out.append(f",p_chart_id=>wwv_flow_imp.id({bar_chart_id})")
-    out.append(",p_axis=>'x'")
-    out.append(",p_is_rendered=>'on'")
-    out.append(",p_format_scaling=>'auto'")
-    out.append(",p_scaling=>'linear'")
-    out.append(",p_position=>'auto'")
-    out.append(");")
-    out.append("wwv_flow_imp_page.create_jet_chart_series(")
-    out.append(f" p_id=>wwv_flow_imp.id({bar_series_id})")
-    out.append(f",p_chart_id=>wwv_flow_imp.id({bar_chart_id})")
-    out.append(",p_seq=>10")
-    out.append(",p_name=>'Count'")
-    out.append(",p_query_type=>'SQL'")
-    out.append(f",p_query_source=>'{bar_sql}'")
-    out.append(",p_items_value_column_name=>'VALUE'")
-    out.append(",p_items_label_column_name=>'CATEGORY'")
+    out.append("  'expand_shortcuts', 'N',")
+    out.append("  'output_as', 'HTML')).to_clob")
     out.append(");")
 
     out.append("end;")
     out.append("/")
+
     return "\n".join(out)
 
 
@@ -797,10 +804,524 @@ def generate_css_block(css_content: str, app_id: int) -> str:
     out.append("/")
     return "\n".join(out)
 
+REACT_CLONE_CSS = """
+.rt-shell{min-height:100vh;background:#f8fafc;font-family:Inter,Arial,sans-serif;padding:32px}
+.rt-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.rt-title{font-size:28px;font-weight:700;color:#1e293b;margin:0}
+.rt-subtitle{font-size:14px;color:#64748b;margin-top:4px}
+.rt-btn-primary{background:#0284c7;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600}
+.rt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.rt-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.rt-card-label{font-size:12px;color:#64748b;text-transform:uppercase;font-weight:600}
+.rt-card-value{font-size:26px;color:#1e293b;font-weight:700;margin-top:6px}
+.rt-panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.05);overflow:hidden}
+.rt-toolbar{display:flex;gap:12px;padding:16px;border-bottom:1px solid #e2e8f0}
+.rt-input,.rt-select{height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px}
+.rt-input{flex:1}
+.rt-table{width:100%;border-collapse:collapse}
+.rt-table th{background:#f8fafc;text-align:left;padding:12px 16px;font-size:12px;color:#64748b;text-transform:uppercase}
+.rt-table td{padding:14px 16px;border-top:1px solid #f1f5f9;color:#334155;font-size:14px}
+.rt-badge{display:inline-flex;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600;background:#e0f2fe;color:#0369a1}
+.rt-actions{display:flex;gap:8px}
+.rt-icon-btn{width:32px;height:32px;border:0;border-radius:8px;background:#f1f5f9;color:#475569}
+.rt-modal{margin-top:24px;background:#fff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 20px 40px rgba(15,23,42,.12);max-width:560px}
+.rt-modal-head{display:flex;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #e2e8f0}
+.rt-modal-body{padding:22px;display:grid;gap:16px}
+.rt-form-field label{display:block;font-size:13px;font-weight:600;color:#334155;margin-bottom:6px}
+.rt-form-field input,.rt-form-field select,.rt-form-field textarea{width:100%;height:44px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px}
+.rt-modal-foot{display:flex;gap:12px;padding:0 22px 22px}
+.rt-btn-secondary{background:#e2e8f0;color:#334155;border:0;border-radius:10px;padding:10px 16px;font-weight:600;flex:1}
+.rt-btn-save{background:#0284c7;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:600;flex:1}
+@media(max-width:900px){.rt-grid{grid-template-columns:1fr}.rt-header{flex-direction:column;align-items:flex-start;gap:12px}}
+"""
+
+
+def _react_sample_rows(comp):
+    name = comp["name"].lower()
+
+    if "customer" in name:
+        return [
+            ["Acme Corp", "acme@example.com", "9876543210", "<span class='rt-badge'>Active</span>"],
+            ["Global Traders", "global@example.com", "9876501234", "<span class='rt-badge'>Pending</span>"],
+            ["Nova Industries", "nova@example.com", "9876511111", "<span class='rt-badge'>Active</span>"],
+        ]
+
+    if "purchase" in name:
+        return [
+            ["PO-1001", "ABC Supplier", "2026-05-01", "<span class='rt-badge'>Draft</span>"],
+            ["PO-1002", "Global Supplies", "2026-05-04", "<span class='rt-badge'>Confirmed</span>"],
+        ]
+
+    if "sales" in name:
+        return [
+            ["SO-1001", "Acme Corp", "2026-05-03", "<span class='rt-badge'>Shipped</span>"],
+            ["SO-1002", "Nova Industries", "2026-05-06", "<span class='rt-badge'>Draft</span>"],
+        ]
+
+    return [
+        ["ORD-1001", "Website redesign", "$1200", "<span class='rt-badge'>Pending</span>"],
+        ["ORD-1002", "ERP customization", "$2400", "<span class='rt-badge'>Completed</span>"],
+    ]
+
+
+def _react_columns(comp):
+    fields = comp.get("fields") or comp.get("table_columns") or []
+
+    if fields:
+        return [_label(f) for f in fields[:5]]
+
+    name = comp["name"].lower()
+
+    if "customer" in name:
+        return ["Name", "Email", "Phone", "Status"]
+
+    if "purchase" in name:
+        return ["PO Number", "Supplier", "Date", "Status"]
+
+    if "sales" in name:
+        return ["SO Number", "Customer", "Date", "Status"]
+
+    return ["Order No", "Description", "Amount", "Status"]
+
+
+def _build_table_html(comp):
+    cols = _react_columns(comp)
+    rows = _react_sample_rows(comp)
+
+    th = "".join([f"<th>{c}</th>" for c in cols])
+    th += "<th>Actions</th>"
+
+    body = []
+    for row in rows:
+        tds = "".join([f"<td>{cell}</td>" for cell in row[:len(cols)]])
+        tds += """
+<td>
+  <div class="rt-actions">
+    <button class="rt-icon-btn">✎</button>
+    <button class="rt-icon-btn">🗑</button>
+  </div>
+</td>
+"""
+        body.append(f"<tr>{tds}</tr>")
+
+    return f"""
+<table class="rt-table">
+  <thead><tr>{th}</tr></thead>
+  <tbody>{''.join(body)}</tbody>
+</table>
+"""
+
+
+def _build_form_html(comp):
+    fields = comp.get("fields") or []
+
+    if not fields:
+        name = comp["name"].lower()
+        if "customer" in name:
+            fields = ["name", "email", "phone", "status"]
+        elif "purchase" in name:
+            fields = ["po_number", "supplier", "order_date", "status", "notes"]
+        elif "sales" in name:
+            fields = ["so_number", "customer_name", "order_date", "status", "notes"]
+        else:
+            fields = ["description", "amount", "status"]
+
+    controls = []
+    for f in fields[:8]:
+        label = _label(f)
+        if "status" in f.lower():
+            control = f"""
+<div class="rt-form-field">
+  <label>{label}</label>
+  <select><option>Active</option><option>Pending</option><option>Completed</option></select>
+</div>
+"""
+        elif "notes" in f.lower() or "description" in f.lower():
+            control = f"""
+<div class="rt-form-field">
+  <label>{label}</label>
+  <textarea></textarea>
+</div>
+"""
+        else:
+            control = f"""
+<div class="rt-form-field">
+  <label>{label}</label>
+  <input type="text" />
+</div>
+"""
+        controls.append(control)
+
+    return f"""
+<div class="rt-modal">
+  <div class="rt-modal-head">
+    <strong>Create / Edit {_label(comp["name"])}</strong>
+    <span>×</span>
+  </div>
+  <div class="rt-modal-body">
+    {''.join(controls)}
+  </div>
+  <div class="rt-modal-foot">
+    <button class="rt-btn-secondary">Cancel</button>
+    <button class="rt-btn-save">Save</button>
+  </div>
+</div>
+"""
+
+
+def generate_react_clone_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
+    name = comp["name"]
+    page_name = _label(name)
+    page_alias = _alias(name)
+    plug_id = ids.next()
+
+    is_form_management = comp["type"] == "form"
+    is_dashboard = comp["type"] == "dashboard"
+
+    if is_dashboard:
+        inner = f"""
+<div class="rt-header">
+  <div>
+    <h1 class="rt-title">{page_name}</h1>
+    <div class="rt-subtitle">Overview and analytics dashboard</div>
+  </div>
+</div>
+
+<div class="rt-grid">
+  <div class="rt-card"><div class="rt-card-label">Total Customers</div><div class="rt-card-value">156</div></div>
+  <div class="rt-card"><div class="rt-card-label">Total Orders</div><div class="rt-card-value">248</div></div>
+  <div class="rt-card"><div class="rt-card-label">Revenue</div><div class="rt-card-value">$84,200</div></div>
+  <div class="rt-card"><div class="rt-card-label">Pending</div><div class="rt-card-value">18</div></div>
+</div>
+
+<div class="rt-panel" style="padding:24px;height:320px">
+  <h3>Recent Activity</h3>
+  <p class="rt-subtitle">Chart area / KPI summary</p>
+</div>
+"""
+    else:
+        create_label = "Create"
+        lname = name.lower()
+        if "customer" in lname:
+            create_label = "Add Customer"
+        elif "purchase" in lname:
+            create_label = "New PO"
+        elif "sales" in lname:
+            create_label = "New SO"
+        elif "order" in lname:
+            create_label = "New Order"
+
+        inner = f"""
+<div class="rt-header">
+  <div>
+    <h1 class="rt-title">{page_name}</h1>
+    <div class="rt-subtitle">React-style cloned page generated in APEX</div>
+  </div>
+  {"<button class='rt-btn-primary'>+ " + create_label + "</button>" if is_form_management else ""}
+</div>
+
+<div class="rt-grid">
+  <div class="rt-card"><div class="rt-card-label">Total</div><div class="rt-card-value">24</div></div>
+  <div class="rt-card"><div class="rt-card-label">Active</div><div class="rt-card-value">18</div></div>
+  <div class="rt-card"><div class="rt-card-label">Pending</div><div class="rt-card-value">4</div></div>
+  <div class="rt-card"><div class="rt-card-label">Completed</div><div class="rt-card-value">12</div></div>
+</div>
+
+<div class="rt-panel">
+  <div class="rt-toolbar">
+    <input class="rt-input" placeholder="Search..." />
+    <select class="rt-select"><option>Sort / Filter</option></select>
+  </div>
+  {_build_table_html(comp)}
+</div>
+
+{_build_form_html(comp) if is_form_management else ""}
+"""
+
+    html = f"<div class='rt-shell'>{inner}</div>"
+
+    out = []
+    out.append(f"prompt --application/pages/page_{page_id:05d}")
+    out.append("begin")
+    out.append("wwv_flow_imp_page.create_page(")
+    out.append(f" p_id=>{page_id}")
+    out.append(f",p_name=>'{_sanitize(page_name)}'")
+    out.append(f",p_alias=>'{page_alias}'")
+    out.append(f",p_step_title=>'{_sanitize(page_name)}'")
+    out.append(",p_autocomplete_on_off=>'OFF'")
+    out.append(",p_page_template_options=>'#DEFAULT#'")
+    out.append(",p_protection_level=>'C'")
+    out.append(",p_page_component_map=>'18'")
+    out.append(");")
+
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({plug_id})")
+    out.append(f",p_plug_name=>'{_sanitize(page_name)}'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>10")
+    out.append(f",p_plug_source=>q'~{html}~'")
+    out.append(",p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(")
+    out.append("  'expand_shortcuts', 'N',")
+    out.append("  'output_as', 'HTML')).to_clob")
+    out.append(");")
+    out.append("end;")
+    out.append("/")
+    return "\n".join(out)
+
+
+def generate_modal_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
+    name = comp["name"]
+    fields = comp.get("fields") or ["description", "amount", "status"]
+    page_name = "Create " + _label(name)
+    page_alias = _alias("Create " + name)
+
+    plug_id = ids.next()
+    save_btn_id = ids.next()
+    cancel_btn_id = ids.next()
+
+    out = []
+    out.append(f"prompt --application/pages/page_{page_id:05d}")
+    out.append("begin")
+    out.append("wwv_flow_imp_page.create_page(")
+    out.append(f" p_id=>{page_id}")
+    out.append(f",p_name=>'{_sanitize(page_name)}'")
+    out.append(f",p_alias=>'{page_alias}'")
+    out.append(f",p_step_title=>'{_sanitize(page_name)}'")
+    out.append(",p_page_mode=>'MODAL'")
+    out.append(",p_autocomplete_on_off=>'OFF'")
+    out.append(",p_page_template_options=>'#DEFAULT#'")
+    out.append(",p_protection_level=>'C'")
+    out.append(",p_page_component_map=>'17'")
+    out.append(");")
+
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({plug_id})")
+    out.append(f",p_plug_name=>'{_sanitize(page_name)}'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>10")
+    out.append(",p_location=>null")
+    out.append(");")
+
+    seq = 10
+    for field in fields[:20]:
+        item_id = ids.next()
+        display_as = _item_display_as(field)
+
+        out.append("wwv_flow_imp_page.create_page_item(")
+        out.append(f" p_id=>wwv_flow_imp.id({item_id})")
+        out.append(f",p_name=>'P{page_id}_{field.upper()}'")
+        out.append(f",p_item_sequence=>{seq}")
+        out.append(f",p_item_plug_id=>wwv_flow_imp.id({plug_id})")
+        out.append(f",p_prompt=>'{_sanitize(_label(field))}'")
+        out.append(f",p_display_as=>'{display_as}'")
+        out.append(",p_cSize=>100")
+        out.append(f",p_field_template=>{WORKSPACE_TEMPLATE_IDS['FIELD_TEMPLATE']}")
+        out.append(",p_item_template_options=>'#DEFAULT#'")
+        out.append(");")
+        seq += 10
+
+    out.append("wwv_flow_imp_page.create_page_button(")
+    out.append(f" p_id=>wwv_flow_imp.id({save_btn_id})")
+    out.append(",p_button_sequence=>10")
+    out.append(f",p_button_plug_id=>wwv_flow_imp.id({plug_id})")
+    out.append(",p_button_name=>'SAVE'")
+    out.append(",p_button_action=>'SUBMIT'")
+    out.append(",p_button_template_options=>'#DEFAULT#:t-Button--hot'")
+    out.append(f",p_button_template_id=>{WORKSPACE_TEMPLATE_IDS['BUTTON_TEMPLATE']}")
+    out.append(",p_button_is_hot=>'Y'")
+    out.append(",p_button_image_alt=>'Save'")
+    out.append(",p_button_position=>'CHANGE'")
+    out.append(");")
+
+    out.append("wwv_flow_imp_page.create_page_button(")
+    out.append(f" p_id=>wwv_flow_imp.id({cancel_btn_id})")
+    out.append(",p_button_sequence=>20")
+    out.append(f",p_button_plug_id=>wwv_flow_imp.id({plug_id})")
+    out.append(",p_button_name=>'CANCEL'")
+    out.append(",p_button_action=>'DEFINED_BY_DA'")
+    out.append(f",p_button_template_id=>{WORKSPACE_TEMPLATE_IDS['BUTTON_TEMPLATE']}")
+    out.append(",p_button_image_alt=>'Cancel'")
+    out.append(",p_button_position=>'CHANGE'")
+    out.append(");")
+
+    # Real APEX close dialog process after submit
+    close_id = ids.next()
+    out.append("wwv_flow_imp_page.create_page_process(")
+    out.append(f" p_id=>wwv_flow_imp.id({close_id})")
+    out.append(",p_process_sequence=>30")
+    out.append(",p_process_point=>'AFTER_SUBMIT'")
+    out.append(",p_process_type=>'NATIVE_CLOSE_WINDOW'")
+    out.append(",p_process_name=>'Close Dialog'")
+    out.append(f",p_process_when_button_id=>wwv_flow_imp.id({save_btn_id})")
+    out.append(");")
+
+    out.append("end;")
+    out.append("/")
+    return "\n".join(out)
+
+
+# def generate_styled_report_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any], form_page_id: int) -> str:
+#     sql = generate_ir_page(ids, page_id, comp)
+
+#     # Add page CSS class
+#     sql = sql.replace(
+#         ",p_page_template_options=>'#DEFAULT#'",
+#         ",p_page_template_options=>'#DEFAULT#'\n,p_css_classes=>'rt-page'"
+#     )
+
+#     # Add Create button redirect to modal page
+#     sql = sql.replace(
+#         ",p_button_action=>'REDIRECT_PAGE'",
+#         ",p_button_action=>'REDIRECT_PAGE'"
+#     )
+
+#     sql = sql.replace(
+#         ",p_button_alignment=>'RIGHT'",
+#         f",p_button_alignment=>'RIGHT'\n,p_button_redirect_url=>'f?p=&APP_ID.:{form_page_id}:&SESSION.::&DEBUG.:RP::'"
+#     )
+
+#     return sql
+
+def generate_styled_report_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any], form_page_id: int) -> str:
+    sql = generate_ir_page(ids, page_id, comp)
+
+    # Do not add p_css_classes here.
+    # Your current APEX import API does not support p_css_classes in create_page.
+
+    sql = sql.replace(
+        ",p_button_alignment=>'RIGHT'",
+        f",p_button_alignment=>'RIGHT'\n,p_button_redirect_url=>'f?p=&APP_ID.:{form_page_id}:&SESSION.::&DEBUG.:RP::'"
+    )
+
+    return sql
 
 # =============================================================================
 #   MASTER SCRIPT ASSEMBLY
 # =============================================================================
+
+# this is correct Till single page generation with UI
+# def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: str) -> Dict[str, Any]:
+#     ids = IdAllocator()
+#     release, _ = _release(version)
+
+#     out = []
+#     out.append("prompt --application/set_environment")
+#     out.append("set define off verify off feedback off")
+#     out.append("whenever sqlerror exit sql.sqlcode rollback")
+#     out.append("--------------------------------------------------------------------------------")
+#     out.append("-- React → Oracle APEX SQL Migration Script")
+#     out.append(f"-- Workspace: {workspace}")
+#     out.append(f"-- Application ID: {app_id}")
+#     out.append(f"-- Target APEX Version: {version} (release {release})")
+#     out.append(f"-- Detected components: {len(parsed['components'])}")
+#     out.append("--------------------------------------------------------------------------------")
+#     out.append("")
+#     out.append(_emit_import_begin(workspace, app_id, version))
+
+#     page_summary: List[Dict[str, Any]] = []
+#     page_seq = 100
+#     for comp in parsed["components"][:40]:
+
+#         page_seq += 1
+#         out.append("")
+
+#     # =========================
+#     # REPORT PAGE
+#     # =========================
+#     if comp["type"] == "report":
+
+#         report_page_id = page_seq
+#         form_page_id = page_seq + 500
+
+#         out.append(
+#             generate_styled_report_page(
+#                 ids,
+#                 report_page_id,
+#                 comp,
+#                 form_page_id
+#             )
+#         )
+
+#         out.append(
+#             generate_modal_form_page(
+#                 ids,
+#                 form_page_id,
+#                 comp
+#             )
+#         )
+
+#         page_summary.append({
+#             "page_id": report_page_id,
+#             "name": comp["name"],
+#             "type": "report",
+#             "fields": len(comp.get("fields", [])),
+#         })
+
+#         page_summary.append({
+#             "page_id": form_page_id,
+#             "name": "Create " + comp["name"],
+#             "type": "modal_form",
+#             "fields": len(comp.get("fields", [])),
+#         })
+
+#     # =========================
+#     # FORM PAGE
+#     # =========================
+#     elif comp["type"] == "form":
+
+#         out.append(
+#             generate_form_page(
+#                 ids,
+#                 page_seq,
+#                 comp
+#             )
+#         )
+
+#         page_summary.append({
+#             "page_id": page_seq,
+#             "name": comp["name"],
+#             "type": "form",
+#             "fields": len(comp.get("fields", [])),
+#         })
+
+#     # =========================
+#     # DASHBOARD PAGE
+#     # =========================
+#     elif comp["type"] == "dashboard":
+
+#         out.append(
+#             generate_dashboard_page(
+#                 ids,
+#                 page_seq,
+#                 comp
+#             )
+#         )
+
+#         page_summary.append({
+#             "page_id": page_seq,
+#             "name": comp["name"],
+#             "type": "dashboard",
+#             "fields": 0,
+#         })
+
+#     # Static CSS file (in its own block — must be inside an import context)
+#     out.append("")
+#     out.append("prompt --application/shared_components/files/react_theme")
+#     out.append(
+#     generate_css_block((parsed.get("css", "") or "")+ "\n"+ REACT_NATIVE_CSS,app_id))
+
+#     out.append("prompt --application/end_environment")
+#     out.append(_emit_import_end())
+#     out.append("set verify on feedback on define on")
+#     out.append("prompt  ...done")
+
+#     sql = "\n".join(out)
+#     return {"sql": sql, "pages": page_summary, "component_count": len(parsed["components"])}
+
+
+
 
 def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: str) -> Dict[str, Any]:
     ids = IdAllocator()
@@ -820,28 +1341,62 @@ def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: s
     out.append("")
     out.append(_emit_import_begin(workspace, app_id, version))
 
-    page_summary: List[Dict[str, Any]] = []
-    page_seq = 100
+    page_summary = []
+    page_seq = 500
+
     for comp in parsed["components"][:40]:
         page_seq += 1
         out.append("")
-        if comp["type"] == "form":
+
+        if comp["type"] == "report":
+            report_page_id = page_seq
+            form_page_id = page_seq + 500
+
+            out.append(generate_styled_report_page(ids, report_page_id, comp, form_page_id))
+            out.append(generate_modal_form_page(ids, form_page_id, comp))
+
+            page_summary.append({
+                "page_id": report_page_id,
+                "name": comp["name"],
+                "type": "report",
+                "fields": len(comp.get("fields", [])),
+            })
+
+            page_summary.append({
+                "page_id": form_page_id,
+                "name": "Create " + comp["name"],
+                "type": "modal_form",
+                "fields": len(comp.get("fields", [])),
+            })
+
+        elif comp["type"] == "form":
             out.append(generate_form_page(ids, page_seq, comp))
-        elif comp["type"] == "report":
-            out.append(generate_ir_page(ids, page_seq, comp))
+
+            page_summary.append({
+                "page_id": page_seq,
+                "name": comp["name"],
+                "type": "form",
+                "fields": len(comp.get("fields", [])),
+            })
+
         elif comp["type"] == "dashboard":
             out.append(generate_dashboard_page(ids, page_seq, comp))
-        page_summary.append({
-            "page_id": page_seq,
-            "name": comp["name"],
-            "type": comp["type"],
-            "fields": len(comp.get("fields", [])),
-        })
 
-    # Static CSS file (in its own block — must be inside an import context)
+            page_summary.append({
+                "page_id": page_seq,
+                "name": comp["name"],
+                "type": "dashboard",
+                "fields": 0,
+            })
+
     out.append("")
     out.append("prompt --application/shared_components/files/react_theme")
-    out.append(generate_css_block(parsed.get("css", ""), app_id))
+    out.append(
+        generate_css_block(
+            (parsed.get("css", "") or "") + "\n" + REACT_NATIVE_CSS,
+            app_id
+        )
+    )
 
     out.append("prompt --application/end_environment")
     out.append(_emit_import_end())
@@ -849,4 +1404,9 @@ def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: s
     out.append("prompt  ...done")
 
     sql = "\n".join(out)
-    return {"sql": sql, "pages": page_summary, "component_count": len(parsed["components"])}
+
+    return {
+        "sql": sql,
+        "pages": page_summary,
+        "component_count": len(parsed["components"])
+    }
