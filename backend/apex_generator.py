@@ -714,6 +714,207 @@ def generate_css_block(css_content: str, app_id: int) -> str:
     out.append("/")
     return "\n".join(out)
 
+def generate_erp_form_page(ids: IdAllocator, page_id: int, comp: Dict[str, Any]) -> str:
+    name = comp["name"]
+    page_name = comp.get("title") or _label(name)
+    page_alias = _alias(name, page_id)
+
+    main_region_id = ids.next()
+    line_region_id = ids.next()
+    lov_region_id = ids.next()
+    save_btn_id = ids.next()
+    cancel_btn_id = ids.next()
+    add_btn_id = ids.next()
+
+    fields_meta = _fields_from_comp(comp)
+
+    left_fields = fields_meta[:10]
+    middle_fields = fields_meta[10:20]
+
+    out = []
+    out.append(f"prompt --application/pages/page_{page_id:05d}")
+    out.append("begin")
+
+    out.append("wwv_flow_imp_page.create_page(")
+    out.append(f" p_id=>{page_id}")
+    out.append(f",p_name=>'{_sanitize(page_name)}'")
+    out.append(f",p_alias=>'{page_alias}'")
+    out.append(f",p_step_title=>'{_sanitize(page_name)}'")
+    out.append(",p_autocomplete_on_off=>'OFF'")
+    out.append(",p_page_template_options=>'#DEFAULT#'")
+    out.append(",p_protection_level=>'C'")
+    out.append(",p_page_component_map=>'17'")
+    out.append(");")
+
+    # Main header form region
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({main_region_id})")
+    out.append(f",p_plug_name=>'{_sanitize(page_name)}'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>10")
+    out.append(",p_location=>null")
+    out.append(");")
+
+    seq = 10
+    for field_obj in fields_meta[:30]:
+        field = field_obj["name"]
+        item_id = ids.next()
+        display_as = _item_display_from_meta(field_obj)
+
+        out.append("wwv_flow_imp_page.create_page_item(")
+        out.append(f" p_id=>wwv_flow_imp.id({item_id})")
+        out.append(f",p_name=>'P{page_id}_{field.upper()}'")
+        out.append(f",p_item_sequence=>{seq}")
+        out.append(f",p_item_plug_id=>wwv_flow_imp.id({main_region_id})")
+        out.append(f",p_prompt=>'{_sanitize(field_obj.get('label') or _label(field))}'")
+        out.append(f",p_display_as=>'{display_as}'")
+        out.append(",p_cSize=>50")
+        out.append(f",p_field_template=>{WORKSPACE_TEMPLATE_IDS['FIELD_TEMPLATE']}")
+        out.append(",p_item_template_options=>'#DEFAULT#'")
+        out.append(");")
+        seq += 10
+
+    # Line items region
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({line_region_id})")
+    out.append(",p_plug_name=>'Order Line Items'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>20")
+    out.append(",p_query_type=>'SQL'")
+    out.append(",p_plug_source=>'select 1 sr, ''ITM-001'' code, ''Sample Item'' item_name, ''PCS'' uom, 1 qty, 100 rate from dual'")
+    out.append(",p_plug_source_type=>'NATIVE_SQL_REPORT'")
+    out.append(");")
+
+    # Add Products button
+    out.append("wwv_flow_imp_page.create_page_button(")
+    out.append(f" p_id=>wwv_flow_imp.id({add_btn_id})")
+    out.append(",p_button_sequence=>10")
+    out.append(f",p_button_plug_id=>wwv_flow_imp.id({line_region_id})")
+    out.append(",p_button_name=>'ADD_PRODUCTS'")
+    out.append(",p_button_action=>'DEFINED_BY_DA'")
+    out.append(",p_button_template_options=>'#DEFAULT#:t-Button--hot'")
+    out.append(f",p_button_template_id=>{WORKSPACE_TEMPLATE_IDS['BUTTON_TEMPLATE']}")
+    out.append(",p_button_is_hot=>'Y'")
+    out.append(",p_button_image_alt=>'Add Products'")
+    out.append(",p_button_position=>'TOP'")
+    out.append(");")
+
+    # LOV popup region
+    out.append("wwv_flow_imp_page.create_page_plug(")
+    out.append(f" p_id=>wwv_flow_imp.id({lov_region_id})")
+    out.append(",p_plug_name=>'Select Products — Item LOV'")
+    out.append(",p_region_template_options=>'#DEFAULT#'")
+    out.append(f",p_plug_template=>{WORKSPACE_TEMPLATE_IDS['REGION_STANDARD']}")
+    out.append(",p_plug_display_sequence=>30")
+    out.append(",p_query_type=>'SQL'")
+    out.append(",p_plug_source=>'select ''ITM-001'' item_code, ''Industrial Bearing 6205'' item_name, ''Mechanical'' category, ''PCS'' uom, 450 stock, 125.50 rate from dual union all select ''ITM-002'', ''Hydraulic Pump 3HP'', ''Hydraulics'', ''NOS'', 28, 4500 from dual'")
+    out.append(",p_plug_source_type=>'NATIVE_SQL_REPORT'")
+    out.append(");")
+
+    # Save button
+    out.append("wwv_flow_imp_page.create_page_button(")
+    out.append(f" p_id=>wwv_flow_imp.id({save_btn_id})")
+    out.append(",p_button_sequence=>40")
+    out.append(f",p_button_plug_id=>wwv_flow_imp.id({main_region_id})")
+    out.append(",p_button_name=>'SAVE'")
+    out.append(",p_button_action=>'SUBMIT'")
+    out.append(",p_button_template_options=>'#DEFAULT#:t-Button--hot'")
+    out.append(f",p_button_template_id=>{WORKSPACE_TEMPLATE_IDS['BUTTON_TEMPLATE']}")
+    out.append(",p_button_is_hot=>'Y'")
+    out.append(",p_button_image_alt=>'Save'")
+    out.append(",p_button_position=>'EDIT'")
+    out.append(");")
+
+    out.append("end;")
+    out.append("/")
+    return "\n".join(out)
+
+
+# def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: str) -> Dict[str, Any]:
+#     ids = IdAllocator()
+#     release, _ = _release(version)
+
+#     out = []
+#     out.append("prompt --application/set_environment")
+#     out.append("set define off verify off feedback off")
+#     out.append("whenever sqlerror exit sql.sqlcode rollback")
+#     out.append("--------------------------------------------------------------------------------")
+#     out.append("-- React → Oracle APEX SQL Migration Script")
+#     out.append(f"-- Workspace: {workspace}")
+#     out.append(f"-- Application ID: {app_id}")
+#     out.append(f"-- Target APEX Version: {version} (release {release})")
+#     out.append(f"-- Detected components: {len(parsed['components'])}")
+#     out.append("--------------------------------------------------------------------------------")
+#     out.append("")
+#     out.append(_emit_import_begin(workspace, app_id, version))
+
+#     page_summary: List[Dict[str, Any]] = []
+#     page_seq = 500
+
+#     for comp in parsed["components"][:40]:
+#         page_seq += 1
+#         out.append("")
+
+#         if comp["type"] == "report":
+#             report_page_id = page_seq
+#             form_page_id = page_seq + 500
+#             out.append(generate_styled_report_page(ids, report_page_id, comp, form_page_id))
+#             out.append(generate_modal_form_page(ids, form_page_id, comp))
+#             page_summary.append({"page_id": report_page_id, "name": comp["name"], "type": "report", "fields": len(comp.get("fields", []))})
+#             page_summary.append({"page_id": form_page_id, "name": "Create " + _base_entity_name(comp["name"]), "type": "modal_form", "fields": len(comp.get("fields", []))})
+
+#         elif comp["type"] == "form":
+
+#             layout = comp.get("layout") or {}
+
+#         if (
+#             layout.get("has_item_lov")
+#             or layout.get("has_line_items_grid")
+#             or layout.get("has_tabs")
+#             or layout.get("has_summary_panel")
+#         ):
+
+#             out.append(
+#                 generate_erp_form_page(
+#                     ids,
+#                     page_seq,
+#                     comp
+#                 )
+#         )
+
+#         else:
+
+#             out.append(
+#                 generate_form_page(
+#                     ids,
+#                     page_seq,
+#                     comp
+#                 )
+#             )
+
+#             page_summary.append({
+#                 "page_id": page_seq,
+#                 "name": comp["name"],
+#                 "type": comp["type"],
+#                 "fields": len(comp.get("fields", []))
+#             })
+#         elif comp["type"] == "dashboard":
+#             out.append(generate_dashboard_page(ids, page_seq, comp))
+#             page_summary.append({"page_id": page_seq, "name": comp["name"], "type": "dashboard", "fields": 0})
+
+#             out.append("")
+#             out.append("prompt --application/shared_components/files/react_theme")
+#             out.append(generate_css_block((parsed.get("css", "") or "") + "\n" + REACT_NATIVE_CSS, app_id))
+#             out.append("prompt --application/end_environment")
+#             out.append(_emit_import_end())
+#             out.append("set verify on feedback on define on")
+#             out.append("prompt  ...done")
+
+#     sql = "\n".join(out)
+#     return {"sql": sql, "pages": page_summary, "component_count": len(parsed["components"])}
+
 
 def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: str) -> Dict[str, Any]:
     ids = IdAllocator()
@@ -737,32 +938,131 @@ def generate_sql(parsed: Dict[str, Any], workspace: str, app_id: int, version: s
     page_seq = 500
 
     for comp in parsed["components"][:40]:
+
         page_seq += 1
         out.append("")
 
+        # =========================
+        # REPORT PAGE
+        # =========================
         if comp["type"] == "report":
+
             report_page_id = page_seq
             form_page_id = page_seq + 500
-            out.append(generate_styled_report_page(ids, report_page_id, comp, form_page_id))
-            out.append(generate_modal_form_page(ids, form_page_id, comp))
-            page_summary.append({"page_id": report_page_id, "name": comp["name"], "type": "report", "fields": len(comp.get("fields", []))})
-            page_summary.append({"page_id": form_page_id, "name": "Create " + _base_entity_name(comp["name"]), "type": "modal_form", "fields": len(comp.get("fields", []))})
 
+            out.append(
+                generate_styled_report_page(
+                    ids,
+                    report_page_id,
+                    comp,
+                    form_page_id
+                )
+            )
+
+            out.append(
+                generate_modal_form_page(
+                    ids,
+                    form_page_id,
+                    comp
+                )
+            )
+
+            page_summary.append({
+                "page_id": report_page_id,
+                "name": comp["name"],
+                "type": "report",
+                "fields": len(comp.get("fields", []))
+            })
+
+            page_summary.append({
+                "page_id": form_page_id,
+                "name": "Create " + _base_entity_name(comp["name"]),
+                "type": "modal_form",
+                "fields": len(comp.get("fields", []))
+            })
+
+        # =========================
+        # FORM PAGE
+        # =========================
         elif comp["type"] == "form":
-            out.append(generate_form_page(ids, page_seq, comp))
-            page_summary.append({"page_id": page_seq, "name": comp["name"], "type": "form", "fields": len(comp.get("fields", []))})
 
+            layout = comp.get("layout") or {}
+
+            is_erp_form = (
+                layout.get("has_item_lov")
+                or layout.get("has_line_items_grid")
+                or layout.get("has_tabs")
+                or layout.get("has_summary_panel")
+            )
+
+            if is_erp_form:
+
+                out.append(
+                    generate_erp_form_page(
+                        ids,
+                        page_seq,
+                        comp
+                    )
+                )
+
+            else:
+
+                out.append(
+                    generate_form_page(
+                        ids,
+                        page_seq,
+                        comp
+                    )
+                )
+
+            page_summary.append({
+                "page_id": page_seq,
+                "name": comp["name"],
+                "type": "form",
+                "fields": len(comp.get("fields", []))
+            })
+
+        # =========================
+        # DASHBOARD PAGE
+        # =========================
         elif comp["type"] == "dashboard":
-            out.append(generate_dashboard_page(ids, page_seq, comp))
-            page_summary.append({"page_id": page_seq, "name": comp["name"], "type": "dashboard", "fields": 0})
 
+            out.append(
+                generate_dashboard_page(
+                    ids,
+                    page_seq,
+                    comp
+                )
+            )
+
+            page_summary.append({
+                "page_id": page_seq,
+                "name": comp["name"],
+                "type": "dashboard",
+                "fields": 0
+            })
+
+    # =========================
+    # STATIC CSS FILE
+    # =========================
     out.append("")
     out.append("prompt --application/shared_components/files/react_theme")
-    out.append(generate_css_block((parsed.get("css", "") or "") + "\n" + REACT_NATIVE_CSS, app_id))
+    out.append(
+        generate_css_block(
+            (parsed.get("css", "") or "") + "\n" + REACT_NATIVE_CSS,
+            app_id
+        )
+    )
+
     out.append("prompt --application/end_environment")
     out.append(_emit_import_end())
     out.append("set verify on feedback on define on")
     out.append("prompt  ...done")
 
     sql = "\n".join(out)
-    return {"sql": sql, "pages": page_summary, "component_count": len(parsed["components"])}
+
+    return {
+        "sql": sql,
+        "pages": page_summary,
+        "component_count": len(parsed["components"])
+    }
